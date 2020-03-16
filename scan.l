@@ -14,12 +14,12 @@ O [0-7]
 B [0-1]
 CHAR_HEX \\[0-9A-Fa-f]{1,2}
 
-%x COM STR CHAR END
+%x COM CT CI CC FIN
 
 %% 
 	if (!hasStarted) BEGIN COM;
 
-<END>.|\n		;
+<FIN>.|\n		;
 
 "$$".*			; /* operational comment */
 "$"			BEGIN COM; /* explanatory comment */ 
@@ -48,7 +48,7 @@ CHAR_HEX \\[0-9A-Fa-f]{1,2}
 
 
 "start"			return START;
-"end" 			BEGIN END; return END;
+"end" 			BEGIN FIN; return FIN;
 "void"			return VOID;
 "const"			return CONST;
 "number"		return NUMBER;
@@ -71,18 +71,30 @@ CHAR_HEX \\[0-9A-Fa-f]{1,2}
 "stop"			return STOP;
 "return"		return RETURN;
 
- /*\'			BEGIN CHAR;
-<CHAR>\'		BEGIN INITIAL; return CHAR
-<CHAR>\\		strcat(yylval.s, "\n"*/			
 
 [a-zA-Z][a-zA-Z0-9_]*	yylval.s = dupstr(yytext); return VARIABLE;
 
 
- /*\"			BEGIN STR;
-<STR>\"			BEGIN INITIAL; return STR
-<STR>\\n		strcat(yylval.s, "\n");
-<STR>\\r		strcat(yylval.s, "\r");
-<STR>\\t		strcat(yylval.s, "\t");*/
+
+\'			BEGIN CI;
+<CI>\'			BEGIN INITIAL; return INTEGER;
+<CI>\\\'		yylval.i = (int) '\'';
+<CI>\\			yylval.i = (int) '\\';
+<CI>\\n			yylval.i = (int) '\n';
+<CI>\\r			yylval.i = (int) '\r';	
+<CI>\\t			yylval.i = (int) '\t';
+
+\"([^*"]|\*.)*\"	yylval.s = malloc(yyleng); *yylval.s = 0; REJECT;
+\"			printf("STRING");BEGIN CT;
+<CT>\"			BEGIN INITIAL; return STRING;
+<CT>\\\"		strcat(yylval.s, "\"");
+<CT>\\			strcat(yylval.s, "\\");
+<CT>\\n			strcat(yylval.s, "\n");
+<CT>\\r			strcat(yylval.s, "\r");
+<CT>\\t			strcat(yylval.s, "\t");
+<CT>\\{CHAR_HEX}	{ char s[2]; s[1] = 0; s[0] = strtol(yytext+1,0,16); strcat(yylval.s, s); }
+<CT>\\.			yyerror("invalid escape sequence in string");
+<CT>[^"]		strcat(yylval.s, yytext);
 
 0{O}+                   yylval.i = strtol(yytext, 0, 8); return INTEGER;
 {D}+			yylval.i = strtol(yytext, 0, 10); return INTEGER; 

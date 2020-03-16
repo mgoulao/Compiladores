@@ -27,7 +27,7 @@ examples:: $(LANG)
 testLex:: gram.y scan.l
 	byacc -dv gram.y
 	flex -dl scan.l
-	$(CC) -o $(LANG) lex.yy.c y.tab.c
+	$(CC) -g -o $(LANG) lex.yy.c y.tab.c
 
 
 run:: $(LANG)
