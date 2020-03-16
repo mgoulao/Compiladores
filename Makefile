@@ -24,6 +24,12 @@ $(LANG): gram.y scan.l code.brg
 examples:: $(LANG)
 	make -C $(EXS)
 
+testLex:: gram.y scan.l
+	byacc -dv gram.y
+	flex -dl scan.l
+	$(CC) -o $(LANG) lex.yy.c y.tab.c
+
+
 run:: $(LANG)
 	make -C $(EXS) run
 
