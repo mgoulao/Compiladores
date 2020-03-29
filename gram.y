@@ -21,11 +21,11 @@
 %nonassoc IF
 %nonassoc ELSE
 %right ASSIGN
-%left GE LE EQ NE LESS GREATER
-%left LNOT LAND LOR
-%left PLUS MINUS
-%left TIMES DIVISION MOD POW
-%left READ
+%left GE LE EQ NE '<' '>'
+%left '~' '&' '|'
+%left '+' '-'
+%left '*' '/' '%' '^'
+%left '?'
 
 %%
 start:;

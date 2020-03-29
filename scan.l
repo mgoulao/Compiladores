@@ -28,23 +28,11 @@ CHAR_HEX \\[0-9A-Fa-f]{1,2}
 <COM>"$"		BEGIN INITIAL;
 <COM>.|\n		;
 
-"-"			return MINUS;
-"+"			return PLUS;
-"*"			return TIMES;
-"/"			return DIVISION;
-"%"			return MOD;
-"^"			return POW;
 ":="			return ASSIGN;
-"<"			return LESS;
-">"			return GREATER;
 ">="			return GE; 
 "<="			return LE; 
 "~=="			return EQ; 
 "<>"			return NE; 
-"~"			return LNOT;
-"&"			return LAND;
-"|"			return LOR;
-"?"			return READ;
 
 
 "start"			return START;
