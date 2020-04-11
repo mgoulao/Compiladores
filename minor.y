@@ -1,6 +1,8 @@
 %{
 #include <stdio.h>
 #include <stdlib.h>
+#include "node.h"
+#include "tabid.h"
 #ifndef YYERRCODE
 #define YYERRCODE 256
 #endif
@@ -106,8 +108,8 @@ public  :
 	| PUBLIC 
 	;
 
-body	: vars instrs 
-	| instrs     
+body	: vars stmts 
+	| stmts     
 	;
 				
 literal	: INTEGER
@@ -117,14 +119,15 @@ literal	: INTEGER
 array_init
 	: INTEGER
 	| array_init ',' INTEGER
+	;
 
 literals: literal
 	| string
 	;
 
-instr   : IF expr THEN instrs return elifs FI
-	| IF expr THEN instrs return elifs ELSE instrs return FI
-	| FOR expr UNTIL expr STEP expr DO instrs return DONE 
+stmt  : IF expr THEN stmts return elifs FI
+	| IF expr THEN stmts return elifs ELSE stmts return FI
+	| FOR expr UNTIL expr STEP expr DO stmts return DONE 
 	| expr ';'
 	| expr '!'
 	| REPEAT
@@ -138,12 +141,13 @@ return	:
        	| RETURN expr
 	;
 
-instrs	:
-	| instrs instr
+stmts
+	:
+	| stmts stmt
 	;
 
 elifs	:
-	| ELIF THEN instrs return elifs
+	| ELIF THEN stmts return elifs
 	;
 
 string	: TEXTSTRING

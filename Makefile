@@ -12,21 +12,18 @@ LD=ld -m elf_i386
 
 .SUFFIXES: .asm $(EXT)
 
-$(LANG): gram.y scan.l code.brg
+$(LANG): $(LANG).y $(LANG).l 
 	make -C $(LIB)
-	byacc -dv gram.y
-	flex -dl scan.l
-	pburg -T code.brg
-	$(LINK.c) -o $(LANG) $(ARCH) -I$(LIB) lex.yy.c y.tab.c yyselect.c -L$(LIB) -l$(UTIL)
-	make -C $(RUN)
-	-cp $(RUN)/lib$(LANG).a .
+	byacc -dv $(LANG).y
+	flex -dl $(LANG).l
+	$(LINK.c) -o $(LANG) $(ARCH) -I$(LIB) lex.yy.c y.tab.c -L$(LIB) -l$(UTIL)
 
 examples:: $(LANG)
 	make -C $(EXS)
 
-testLex:: gram.y scan.l
-	byacc -dv gram.y
-	flex -dl scan.l
+testLex:: $(LANG).y $(LANG).l
+	byacc -dv $(LANG).y
+	flex -dl $(LANG).l
 	$(CC) -g -o $(LANG) lex.yy.c y.tab.c
 
 
@@ -40,5 +37,4 @@ run:: $(LANG)
 clean::
 	make -C $(LIB) clean
 	make -C $(RUN) clean
-	make -C $(EXS) clean
 	rm -f *.o $(LANG) lib$(LANG).a lex.yy.c y.tab.c y.tab.h y.output yyselect.c *.asm *~
