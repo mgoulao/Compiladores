@@ -4,22 +4,18 @@
 #include <string.h>
 #include "node.h"
 #include "tabid.h"
-#ifndef YYERRCODE
-#define YYERRCODE 256
-#endif
-#define YYDEBUG 1
 extern int yylex();
 %}
 
 %union {
     int i;	/* integer value */
     char* s;    /* string value*/
-    Node* n	/* Node pointer */
+    Node* n;	/* Node pointer */
 };
 
 %token <i> INTEGER CHAR
-%token <s> IDENT STRING
-%token MODULE PROGRAM START END VOID CONST NUMBER ARRAY STRING TEXTSTRING CHAR FUNCTION
+%token <s> IDENT TEXTSTRING
+%token MODULE PROGRAM START END VOID CONST NUMBER ARRAY STRING CHAR FUNCTION ASSING
 %token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN NIL
 
 %nonassoc IF
@@ -33,6 +29,11 @@ extern int yylex();
 %right '^'
 %nonassoc UMINUS
 %nonassoc '[' '('
+
+%type <n> program module decl opt_initializer initializer decls
+%type <n> function public var params args vars lvalue type body literal array_init
+%type <n> literals  stmt return stmts elifs string str_init str_continuation
+%type <n> str_symbol expr
 
 %%
 
@@ -50,7 +51,7 @@ module	: MODULE decls END { $$ = uniNode(MODULE, $2); }
 decl	: function { $$ = $1; }
 	| public var opt_initializer { $$ = triNode(ASSIGN, $1, $2, $3); } 
 	| FORWARD CONST var { $$ = uniNode(CONST, $3); }
-	| FORWARD var	{ $$ = uniNode(FORWARD, $1); }
+	| FORWARD var	{ $$ = uniNode(FORWARD, $2); }
 	| public CONST initializer { binNode(CONST, $1, $3); }	
 	;
 
@@ -60,16 +61,16 @@ opt_initializer
 	;
 
 initializer
-	: ARRAY IDENT ASSIGN array_init { $$ = binNode(ASSIGN, $2, uniNode(array_init)); }
- 	| NUMBER IDENT ASSIGN INTEGER { $$ = binNode(ASSING, $2, intNode(NUM, $4)); }
-	| STRING IDENT ASSIGN string { $$ = binNode(ASSIGN, $2, strNode(STR, $4)); } 
+	: ARRAY IDENT ASSIGN array_init { $$ = binNode(ASSIGN, $2, uniNode(ARRAY, $4)); }
+ 	| NUMBER IDENT ASSIGN INTEGER { $$ = binNode(ASSING, $2, intNode(NUMBER, $4)); }
+	| STRING IDENT ASSIGN string { $$ = binNode(ASSIGN, $2, strNode(STRING, $4)); } 
 
-decls 	:
+decls 	:		{ $$ = nilNode(NIL); }
       	| decl 		{ $$ = uniNode(';', $1); }
        	| decls ';' decl { $$ = binNode(';', $1, $3); }
 	;
 
-function: FUNCTION FORWARD type IDENT params DONE { $$ = quadNode(';', uniNode(FORWARD), $3, $4, $5); }
+function: FUNCTION FORWARD type IDENT params DONE { $$ = quadNode(';', nilNode(FORWARD), $3, $4, $5); }
        	| FUNCTION public type IDENT params DO body return { $$ = triNode(FUNCTION, quadNode(';', $2, $3, $4, $5), $7 ,$8); }
 	;
 
@@ -79,7 +80,7 @@ var	: NUMBER IDENT	{ $$ = strNode(NUMBER, $2); }
     	| ARRAY IDENT '[' INTEGER ']' { $$ = binNode(ARRAY, $2, $4); }
 	;
 
-params	:
+params	:		{ $$ = nilNode(NIL); }
     	| var		{ $$ = uniNode(';', $1); }
      	| params ';' var { $$ = binNode(';', $1, $3); }
 	;
@@ -106,26 +107,26 @@ public  : 		{ $$ = nilNode(NIL); }
 	| PUBLIC 	{ $$ = nilNode(PUBLIC); }
 	;
 
-body	: vars stmts 	{ $$ = binNode(BODY, $1, $2); }
-	| stmts     	{ $$ = uniNode(BODY_STMTS, $1); }  
+body	: vars stmts 	{ $$ = binNode('{', $1, $2); }
+	| stmts     	{ $$ = uniNode('{', $1); }  
 	;
 				
-literal	: INTEGER	{ $$ = intNode(INT, $1); }
-	| CHAR		{ $$ = intNode(CHAR, (int)$1); }
+literal	: INTEGER	{ $$ = intNode(NUMBER, $1); }
+	| CHAR		{ $$ = intNode('a', (int)$1); }
 	;
 
 array_init
-	: INTEGER	{ $$ = intNode(INT, $1); }
-	| array_init ',' INTEGER { $$ = binNode(ARRAY_INIT, $1, $3); }
+	: INTEGER	{ $$ = intNode(NUMBER, $1); }
+	| array_init ',' INTEGER { $$ = binNode(',', $1, $3); }
 	;
 
 literals: literal	{ $$ = uniNode('.', $1); }
 	| string	{ $$ = strNode(STRING, $1); }
 	;
 
-stmt  : IF expr THEN stmts return elifs FI { $$ = quadNode(IF, $2, $3, $4, uniNode(ELIFS, $5)); }
-	| IF expr THEN stmts return elifs ELSE stmts return FI { $$ = quadNode(ELSE, triNode(IF, $2, $4, $5), uniNode(ELIFS, $6), $8, $9); }  
-	| FOR expr UNTIL expr STEP expr DO stmts return DONE { $$ = binNode(FOR, triNode(FOR_PARAMS, $2, $4, $6), binNode(FOR_BODY, $8, $9)); } 
+stmt  : IF expr THEN stmts return elifs FI { $$ = quadNode(IF, $2, $4, $5, uniNode(ELIF, $6)); }
+	| IF expr THEN stmts return elifs ELSE stmts return FI { $$ = quadNode(ELSE, triNode(IF, $2, $4, $5), uniNode(ELIF, $6), $8, $9); }  
+	| FOR expr UNTIL expr STEP expr DO stmts return DONE { $$ = binNode(FOR, triNode(',', $2, $4, $6), binNode('{', $8, $9)); } 
 	| expr ';'	{ $$ = $1; }
 	| expr '!'	{ $$ = uniNode('!', $1); }
 	| REPEAT	{ $$ = nilNode(REPEAT); }
@@ -144,11 +145,11 @@ stmts
 	| stmts stmt	{ $$ = binNode('.', $1, $2); }
 	;
 
-elifs	:
-	| ELIF THEN stmts return elifs { $$ = triNode(ELIF, binNode(ELIF, $3, $4), $5); }
+elifs	:		{ $$ = nilNode(NIL); }
+	| ELIF THEN stmts return elifs { $$ = binNode(ELIF, binNode(ELIF, $3, $4), $5); }
 	;
 
-string	: TEXTSTRING 	{ $$ = strNode(STR, $1); }
+string	: TEXTSTRING 	{ $$ = strNode(STRING, $1); }
        	| str_init str_continuation { $$ = binNode(STRING, $1, $2); } 
 	;
 
@@ -191,9 +192,14 @@ expr	: lvalue 	{ $$ = uniNode('*', $1); }
 	;
 
 %%
+char **yynames =
+#if YYDEBUG > 0
+		 (char**)yyname;
+#else
+		 0;
+#endif
 int yyerror(const char*);
-char *dupstr(const char*s) { return strdup(s); }
-int main(int argc, char *argv[]) {
+/*int main(int argc, char *argv[]) {
 	extern YYSTYPE yylval;
 	int tk;
 	while ((tk = yylex()))
@@ -202,4 +208,4 @@ int main(int argc, char *argv[]) {
 		else
 			printf("%d:\t%c\n", tk, tk);
 	return 0;
-}
+}*/

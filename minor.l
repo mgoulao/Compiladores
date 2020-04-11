@@ -1,8 +1,8 @@
 %{ 
 #include <stdlib.h> 
 #include <string.h> 
+#include "node.h" 
 #include "y.tab.h" 
-
 char *dupstr(const char *s);
 extern void yyerror(const char *msg);
 int hasStarted = 0;
