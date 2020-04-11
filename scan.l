@@ -60,12 +60,12 @@ CHAR_HEX \\[0-9A-Fa-f]{1,2}
 "return"		return RETURN;
 
 
-[a-zA-Z][a-zA-Z0-9_]*	yylval.s = dupstr(yytext); return VARIABLE;
+[a-zA-Z][a-zA-Z0-9_]*	yylval.s = dupstr(yytext); return IDENT;
 
 
 
 \'			BEGIN CI;
-<CI>\'			BEGIN INITIAL; return INTEGER;
+<CI>\'			BEGIN INITIAL; return CHAR;
 <CI>\\\'		yylval.i = (int) '\'';
 <CI>\\			yylval.i = (int) '\\';
 <CI>\\n			yylval.i = (int) '\n';
@@ -74,7 +74,7 @@ CHAR_HEX \\[0-9A-Fa-f]{1,2}
 
 \"([^*"]|\*.)*\"	yylval.s = malloc(yyleng); *yylval.s = 0; REJECT;
 \"			printf("STRING");BEGIN CT;
-<CT>\"			BEGIN INITIAL; return STRING;
+<CT>\"			BEGIN INITIAL; return TEXTSTRING;
 <CT>\\\"		strcat(yylval.s, "\"");
 <CT>\\			strcat(yylval.s, "\\");
 <CT>\\n			strcat(yylval.s, "\n");
