@@ -13,27 +13,28 @@ extern int yylex();
     Node* n;	/* Node pointer */
 };
 
-%token <i> INTEGER CHAR
+%token <i> INTEGER
 %token <s> IDENT TEXTSTRING
-%token MODULE PROGRAM START END VOID CONST NUMBER ARRAY STRING CHAR FUNCTION 
+%token MODULE PROGRAM START END VOID CONST NUMBER ARRAY STRING FUNCTION ALOC 
 %token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN NIL
 
 %nonassoc IF
 %nonassoc ELSE
+%left ELIF
 %right ASSIGN
-%left GE LE EQ '=' NE '<' '>'
+%left GE LE '=' NE '<' '>'
 %nonassoc '~' '&' '?'
 %left '|'
 %left '+' '-'
 %left '*' '/' '%'
-%right '^'
+%right POW
 %nonassoc UMINUS
 %nonassoc '[' '('
 
 %type <n> program module decl opt_initializer initializer decls
 %type <n> function public var params args vars lvalue type body literal array_init
 %type <n> literals  stmt return stmts elifs string str_init str_continuation
-%type <n> str_symbol expr array_assign number_assign string_assign
+%type <n> str_symbol expr array_assign number_assign string_assign array_size end
 
 %%
 
@@ -56,9 +57,14 @@ decl	: function { $$ = $1; }
 	;
 
 opt_initializer
-	: ARRAY IDENT array_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); }
+	: ARRAY IDENT array_size array_assign { $$ = triNode(ASSIGN, strNode(IDENT, $2), $3, $4); }
         | NUMBER IDENT number_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); }
         | STRING IDENT string_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); }
+	;
+
+array_size
+	:		{ $$ = nilNode(NIL); }
+	| '[' INTEGER ']' { $$ = intNode('[', $2); }
 	;
 
 array_assign
@@ -77,7 +83,7 @@ string_assign
 	; 
 
 initializer
-	: ARRAY IDENT ASSIGN array_init { $$ = binNode(ASSIGN, strNode(IDENT, $2), uniNode(ARRAY, $4)); }
+	: ARRAY IDENT ASSIGN array_size array_init { $$ = triNode(ASSIGN, strNode(IDENT, $2), $4, uniNode(ARRAY, $5)); }
  	| NUMBER IDENT ASSIGN INTEGER { $$ = binNode(ASSIGN, strNode(IDENT, $2), intNode(NUMBER, $4)); }
 	| STRING IDENT ASSIGN string { $$ = binNode(ASSIGN, strNode(IDENT, $2), uniNode(STRING, $4)); } 
 
@@ -117,6 +123,7 @@ lvalue	: IDENT		{ $$ = strNode(IDENT, $1);}
 type	: NUMBER	{ $$ = nilNode(NUMBER); } 
 	| STRING	{ $$ = nilNode(STRING); }
 	| ARRAY 	{ $$ = nilNode(ARRAY); } 
+	| VOID		{ $$ = nilNode(VOID); }
 	;
 
 public  : 		{ $$ = nilNode(NIL); }
@@ -128,7 +135,6 @@ body	: vars stmts 	{ $$ = binNode('{', $1, $2); }
 	;
 				
 literal	: INTEGER	{ $$ = intNode(NUMBER, $1); }
-	| CHAR		{ $$ = intNode('a', (int)$1); }
 	;
 
 array_init
@@ -140,18 +146,23 @@ literals: literal	{ $$ = uniNode('.', $1); }
 	| string	{ $$ = uniNode(STRING, $1); }
 	;
 
-stmt  : IF expr THEN stmts return elifs FI { $$ = quadNode(IF, $2, $4, $5, uniNode(ELIF, $6)); }
-	| IF expr THEN stmts return elifs ELSE stmts return FI { $$ = quadNode(ELSE, triNode(IF, $2, $4, $5), uniNode(ELIF, $6), $8, $9); }  
-	| FOR expr UNTIL expr STEP expr DO stmts return DONE { $$ = binNode(FOR, triNode(',', $2, $4, $6), binNode('{', $8, $9)); } 
+stmt  : IF expr THEN stmts end elifs FI { $$ = quadNode(IF, $2, $4, $5, uniNode(ELIF, $6)); }
+	| IF expr THEN stmts end elifs ELSE stmts end FI { $$ = quadNode(ELSE, triNode(IF, $2, $4, $5), uniNode(ELIF, $6), $8, $9); }  
+	| FOR expr UNTIL expr STEP expr DO stmts end DONE { $$ = binNode(FOR, triNode(',', $2, $4, $6), binNode('{', $8, $9)); } 
 	| expr ';'	{ $$ = $1; }
 	| expr '!'	{ $$ = uniNode('!', $1); }
-	| REPEAT	{ $$ = nilNode(REPEAT); }
-	| STOP		{ $$ = nilNode(STOP); }
-	| lvalue '#' expr ';' { $$ = binNode('#', $1, $3); }
+	| lvalue ALOC  expr ';' { $$ = binNode('#', $1, $3); }
 	| error ';'
 	;
 
-return	:		{ $$ = 0; }
+end	:		{ $$ = nilNode('}'); }
+        | RETURN        { $$ = nilNode(RETURN); }
+        | RETURN expr   { $$ = uniNode(RETURN, $2); }
+	| REPEAT	{ $$ = nilNode(REPEAT); }
+	| STOP		{ $$ = nilNode(STOP); }
+	;
+
+return	:		{ $$ = nilNode(RETURN); }
       	| RETURN	{ $$ = nilNode(RETURN); }
        	| RETURN expr	{ $$ = uniNode(RETURN, $2); }
 	;
@@ -162,7 +173,7 @@ stmts
 	;
 
 elifs	:		{ $$ = nilNode(NIL); }
-	| ELIF THEN stmts return elifs { $$ = binNode(ELIF, binNode(ELIF, $3, $4), $5); }
+	| ELIF expr THEN stmts end elifs { $$ = triNode(ELIF, $2, binNode(ELIF, $4, $5), $6); }
 	;
 
 string	: TEXTSTRING 	{ $$ = strNode(STRING, $1); }
@@ -178,8 +189,7 @@ str_init: str_symbol str_symbol	{ $$ = binNode(STRING, $1, $2); }
 	;
 
 str_symbol
-	: CHAR		{ $$ = intNode(CHAR, (int)$1); }
-	| INTEGER	{ $$ = intNode(INTEGER, $1); }
+	: INTEGER	{ $$ = intNode(INTEGER, $1); }
 	| TEXTSTRING	{ $$ = strNode(STRING, $1); }
 	;
 
@@ -188,11 +198,12 @@ expr	: lvalue 	{ $$ = uniNode('*', $1); }
 	| INTEGER 	{ $$ = intNode(INTEGER, $1); }
 	| string 	{ $$ = $1; }
 	| '-' expr %prec UMINUS { $$ = uniNode('-', $2); }
-	| '?' expr 	{ $$ = uniNode('?', $2); }
+	| '?'	 	{ $$ = nilNode('?'); }
 	| '&' lvalue %prec UMINUS { $$ = uniNode('&', $2); }
 	| expr '+' expr	{ $$ = binNode('+', $1, $3); }
 	| expr '-' expr	{ $$ = binNode('-', $1, $3); }
 	| expr '*' expr	{ $$ = binNode('*', $1, $3); }
+	| expr POW expr	{ $$ = binNode('^', $1, $3); }
 	| expr '/' expr	{ $$ = binNode('/', $1, $3); }
 	| expr '%' expr	{ $$ = binNode('%', $1, $3); }
 	| expr '<' expr	{ $$ = binNode('<', $1, $3); }
@@ -200,7 +211,6 @@ expr	: lvalue 	{ $$ = uniNode('*', $1); }
 	| expr GE expr	{ $$ = binNode(GE, $1, $3); }
 	| expr LE expr	{ $$ = binNode(LE, $1, $3); }
 	| expr NE expr	{ $$ = binNode(NE, $1, $3); }
-	| expr EQ expr	{ $$ = binNode(EQ, $1, $3); }
 	| expr '=' expr	{ $$ = binNode('=', $1, $3); }
 	| expr '&' expr	{ $$ = binNode('&', $1, $3); }
 	| expr '|' expr { $$ = binNode('|', $1, $3); }

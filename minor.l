@@ -5,35 +5,36 @@
 #include "y.tab.h" 
 char *dupstr(const char *s);
 extern void yyerror(const char *msg);
-int hasStarted = 0;
+int hasStarted = 0, charRead = 0;
 %} 
 
 D [0-9]
 H [a-fA-F0-9]
 O [0-7]
 B [0-1]
-CHAR_HEX \\[0-9A-Fa-f]{1,2}
+CHAR_HEX \\[0-9A-Fa-f][0-9A-Fa-f]?
 
-%x COM CT CI CC FIN
+%x IGN COM CT CI CC FIN
 
 %% 
-	if (!hasStarted) BEGIN COM;
+	if (!hasStarted) BEGIN IGN;
 
 <FIN>.|\n		;
 
+<IGN>^"program"		hasStarted = 1; BEGIN INITIAL; return PROGRAM;
+<IGN>^"module"		hasStarted = 1; BEGIN INITIAL; return MODULE;
+
 "$$".*			; /* operational comment */
 "$"			BEGIN COM; /* explanatory comment */ 
-<COM>^"program"		hasStarted = 1; BEGIN INITIAL; return PROGRAM;
-<COM>^"module"		hasStarted = 1; BEGIN INITIAL; return MODULE;
 <COM>"$"		BEGIN INITIAL;
 <COM>.|\n		;
 
 ":="			return ASSIGN;
 ">="			return GE; 
 "<="			return LE; 
-"~="			return EQ; 
-"<>"			return NE; 
-
+"~="			return NE; 
+"#"			return ALOC;
+"^"			return POW;
 
 "start"			return START;
 "end" 			BEGIN FIN; return END;
@@ -60,27 +61,28 @@ CHAR_HEX \\[0-9A-Fa-f]{1,2}
 "return"		return RETURN;
 
 
-[a-zA-Z_][a-zA-Z0-9_]*	yylval.s = dupstr(yytext); return IDENT;
+[a-zA-Z][a-zA-Z0-9_]*	yylval.s = dupstr(yytext); return IDENT;
 
 
-
-\'			BEGIN CI;
-<CI>\'			BEGIN INITIAL; return CHAR;
-<CI>\\\'		yylval.i = (int) '\'';
-<CI>\\			yylval.i = (int) '\\';
-<CI>\\n			yylval.i = (int) '\n';
-<CI>\\r			yylval.i = (int) '\r';	
-<CI>\\t			yylval.i = (int) '\t';
+\'			{ BEGIN CI; charRead = 0; } 
+<CI>\'			{ if(charRead == 0){ yyerror("empty char"); } else if(charRead > 1) { yyerror("multiple character char"); }BEGIN INITIAL; return INTEGER;}
+<CI>\\\'		{yylval.i = (int) '\''; charRead++;}
+<CI>\\\\		{yylval.i = (int) '\\'; charRead++;}
+<CI>\\n			{yylval.i = (int) '\n'; charRead++;}
+<CI>\\r			{yylval.i = (int) '\r'; charRead++;}	
+<CI>\\t			{yylval.i = (int) '\t'; charRead++;}
+<CI>{CHAR_HEX}        { yylval.i = strtol(yytext+1, 0,16); charRead++; }
+<CI>[^']		{yylval.i = (int) yytext[0]; charRead++;}
 
 \"([^*"]|\*.)*\"	yylval.s = malloc(yyleng); *yylval.s = 0; REJECT;
-\"			printf("STRING");BEGIN CT;
+\"			BEGIN CT;
 <CT>\"			BEGIN INITIAL; return TEXTSTRING;
 <CT>\\\"		strcat(yylval.s, "\"");
-<CT>\\			strcat(yylval.s, "\\");
+<CT>\\\\		strcat(yylval.s, "\\");
 <CT>\\n			strcat(yylval.s, "\n");
 <CT>\\r			strcat(yylval.s, "\r");
 <CT>\\t			strcat(yylval.s, "\t");
-<CT>\\{CHAR_HEX}	{ char s[2]; s[1] = 0; s[0] = strtol(yytext+1,0,16); strcat(yylval.s, s); }
+<CT>{CHAR_HEX}	{ char s[2]; s[1] = 0; s[0] = strtol(yytext+1,0,16); strcat(yylval.s, s); }
 <CT>\\.			yyerror("invalid escape sequence in string");
 <CT>[^"]		strcat(yylval.s, yytext);
 
