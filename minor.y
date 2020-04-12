@@ -15,7 +15,7 @@ extern int yylex();
 
 %token <i> INTEGER CHAR
 %token <s> IDENT TEXTSTRING
-%token MODULE PROGRAM START END VOID CONST NUMBER ARRAY STRING CHAR FUNCTION ASSING
+%token MODULE PROGRAM START END VOID CONST NUMBER ARRAY STRING CHAR FUNCTION 
 %token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN NIL
 
 %nonassoc IF
@@ -33,7 +33,7 @@ extern int yylex();
 %type <n> program module decl opt_initializer initializer decls
 %type <n> function public var params args vars lvalue type body literal array_init
 %type <n> literals  stmt return stmts elifs string str_init str_continuation
-%type <n> str_symbol expr
+%type <n> str_symbol expr array_assign number_assign string_assign
 
 %%
 
@@ -49,20 +49,36 @@ module	: MODULE decls END { $$ = uniNode(MODULE, $2); }
 	;
 
 decl	: function { $$ = $1; }
-	| public var opt_initializer ';' { $$ = triNode(ASSIGN, $1, $2, $3); } 
-	| FORWARD CONST var ';' { $$ = uniNode(CONST, $3); }
-	| FORWARD var ';'	{ $$ = uniNode(FORWARD, $2); }
-	| public CONST initializer ';' { binNode(CONST, $1, $3); }	
+	| public opt_initializer { $$ = binNode(ASSIGN, $1, $2); } 
+	| FORWARD CONST var { $$ = uniNode(CONST, $3); }
+	| FORWARD var	{ $$ = uniNode(FORWARD, $2); }
+	| public CONST initializer { binNode(CONST, $1, $3); }	
 	;
 
 opt_initializer
-	:		{ $$ = nilNode(NIL); }
-	| initializer	{ $$ = $1; }
+	: ARRAY IDENT array_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); }
+        | NUMBER IDENT number_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); }
+        | STRING IDENT string_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); }
 	;
+
+array_assign
+	:		{ $$ = nilNode(NIL); }
+	| ASSIGN array_init { $$ = uniNode(ASSIGN, $2); } 
+	;
+
+number_assign
+	:		{ $$ = nilNode(NIL); }
+	| ASSIGN INTEGER { $$ = intNode(ASSIGN, $2); }
+	;
+
+string_assign
+	:		{ $$ = nilNode(NIL); }
+	| ASSIGN string	{ $$ = uniNode(ASSIGN, $2); }
+	; 
 
 initializer
 	: ARRAY IDENT ASSIGN array_init { $$ = binNode(ASSIGN, strNode(IDENT, $2), uniNode(ARRAY, $4)); }
- 	| NUMBER IDENT ASSIGN INTEGER { $$ = binNode(ASSING, strNode(IDENT, $2), intNode(NUMBER, $4)); }
+ 	| NUMBER IDENT ASSIGN INTEGER { $$ = binNode(ASSIGN, strNode(IDENT, $2), intNode(NUMBER, $4)); }
 	| STRING IDENT ASSIGN string { $$ = binNode(ASSIGN, strNode(IDENT, $2), uniNode(STRING, $4)); } 
 
 decls 	:		{ $$ = nilNode(NIL); }
@@ -70,7 +86,7 @@ decls 	:		{ $$ = nilNode(NIL); }
        	| decls ';' decl { $$ = binNode(';', $1, $3); }
 	;
 
-function: FUNCTION FORWARD type IDENT params DONE ';' { $$ = quadNode(';', nilNode(FORWARD), $3, strNode(IDENT, $4), $5); }
+function: FUNCTION FORWARD type IDENT params DONE { $$ = quadNode(';', nilNode(FORWARD), $3, strNode(IDENT, $4), $5); }
        	| FUNCTION public type IDENT params DO body return { $$ = triNode(FUNCTION, quadNode(';', $2, $3, strNode(IDENT, $4), $5), $7 ,$8); }
 	;
 
@@ -168,6 +184,7 @@ str_symbol
 	;
 
 expr	: lvalue 	{ $$ = uniNode('*', $1); }
+     	| lvalue ASSIGN expr { $$ = binNode(ASSIGN, $1, $3); }
 	| INTEGER 	{ $$ = intNode(INTEGER, $1); }
 	| string 	{ $$ = $1; }
 	| '-' expr %prec UMINUS { $$ = uniNode('-', $2); }

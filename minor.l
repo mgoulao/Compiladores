@@ -36,7 +36,7 @@ CHAR_HEX \\[0-9A-Fa-f]{1,2}
 
 
 "start"			return START;
-"end" 			BEGIN FIN; return FIN;
+"end" 			BEGIN FIN; return END;
 "void"			return VOID;
 "const"			return CONST;
 "number"		return NUMBER;
@@ -60,7 +60,7 @@ CHAR_HEX \\[0-9A-Fa-f]{1,2}
 "return"		return RETURN;
 
 
-[a-zA-Z][a-zA-Z0-9_]*	yylval.s = dupstr(yytext); return IDENT;
+[a-zA-Z_][a-zA-Z0-9_]*	yylval.s = dupstr(yytext); return IDENT;
 
 
 
