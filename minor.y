@@ -49,10 +49,10 @@ module	: MODULE decls END { $$ = uniNode(MODULE, $2); }
 	;
 
 decl	: function { $$ = $1; }
-	| public var opt_initializer { $$ = triNode(ASSIGN, $1, $2, $3); } 
-	| FORWARD CONST var { $$ = uniNode(CONST, $3); }
-	| FORWARD var	{ $$ = uniNode(FORWARD, $2); }
-	| public CONST initializer { binNode(CONST, $1, $3); }	
+	| public var opt_initializer ';' { $$ = triNode(ASSIGN, $1, $2, $3); } 
+	| FORWARD CONST var ';' { $$ = uniNode(CONST, $3); }
+	| FORWARD var ';'	{ $$ = uniNode(FORWARD, $2); }
+	| public CONST initializer ';' { binNode(CONST, $1, $3); }	
 	;
 
 opt_initializer
@@ -61,23 +61,23 @@ opt_initializer
 	;
 
 initializer
-	: ARRAY IDENT ASSIGN array_init { $$ = binNode(ASSIGN, $2, uniNode(ARRAY, $4)); }
- 	| NUMBER IDENT ASSIGN INTEGER { $$ = binNode(ASSING, $2, intNode(NUMBER, $4)); }
-	| STRING IDENT ASSIGN string { $$ = binNode(ASSIGN, $2, strNode(STRING, $4)); } 
+	: ARRAY IDENT ASSIGN array_init { $$ = binNode(ASSIGN, strNode(IDENT, $2), uniNode(ARRAY, $4)); }
+ 	| NUMBER IDENT ASSIGN INTEGER { $$ = binNode(ASSING, strNode(IDENT, $2), intNode(NUMBER, $4)); }
+	| STRING IDENT ASSIGN string { $$ = binNode(ASSIGN, strNode(IDENT, $2), uniNode(STRING, $4)); } 
 
 decls 	:		{ $$ = nilNode(NIL); }
       	| decl 		{ $$ = uniNode(';', $1); }
        	| decls ';' decl { $$ = binNode(';', $1, $3); }
 	;
 
-function: FUNCTION FORWARD type IDENT params DONE { $$ = quadNode(';', nilNode(FORWARD), $3, $4, $5); }
-       	| FUNCTION public type IDENT params DO body return { $$ = triNode(FUNCTION, quadNode(';', $2, $3, $4, $5), $7 ,$8); }
+function: FUNCTION FORWARD type IDENT params DONE ';' { $$ = quadNode(';', nilNode(FORWARD), $3, strNode(IDENT, $4), $5); }
+       	| FUNCTION public type IDENT params DO body return { $$ = triNode(FUNCTION, quadNode(';', $2, $3, strNode(IDENT, $4), $5), $7 ,$8); }
 	;
 
 var	: NUMBER IDENT	{ $$ = strNode(NUMBER, $2); }
     	| STRING IDENT	{ $$ = strNode(STRING, $2); }
 	| ARRAY IDENT	{ $$ = strNode(ARRAY, $2); }
-    	| ARRAY IDENT '[' INTEGER ']' { $$ = binNode(ARRAY, $2, $4); }
+    	| ARRAY IDENT '[' INTEGER ']' { $$ = binNode(ARRAY, strNode(STRING, $2), intNode(INTEGER, $4)); }
 	;
 
 params	:		{ $$ = nilNode(NIL); }
@@ -94,7 +94,7 @@ vars 	: var ';'	{ $$ = uniNode(';', $1); }
 	;
 
 lvalue	: IDENT		{ $$ = strNode(IDENT, $1);}
-       	| IDENT '[' expr ']' { $$ = binNode(IDENT, $1, $3); }
+       	| IDENT '[' expr ']' { $$ = binNode(IDENT, strNode(IDENT, $1), $3); }
 	| '*' lvalue	{ $$ = uniNode('*', $2); }
 	; 
 
@@ -117,11 +117,11 @@ literal	: INTEGER	{ $$ = intNode(NUMBER, $1); }
 
 array_init
 	: INTEGER	{ $$ = intNode(NUMBER, $1); }
-	| array_init ',' INTEGER { $$ = binNode(',', $1, $3); }
+	| array_init ',' INTEGER { $$ = binNode(',', $1, intNode(INTEGER, $3)); }
 	;
 
 literals: literal	{ $$ = uniNode('.', $1); }
-	| string	{ $$ = strNode(STRING, $1); }
+	| string	{ $$ = uniNode(STRING, $1); }
 	;
 
 stmt  : IF expr THEN stmts return elifs FI { $$ = quadNode(IF, $2, $4, $5, uniNode(ELIF, $6)); }
@@ -135,7 +135,7 @@ stmt  : IF expr THEN stmts return elifs FI { $$ = quadNode(IF, $2, $4, $5, uniNo
 	| error ';'
 	;
 
-return	:		{ $$ = nilNode(NIL); }
+return	:		{ $$ = 0; }
       	| RETURN	{ $$ = nilNode(RETURN); }
        	| RETURN expr	{ $$ = uniNode(RETURN, $2); }
 	;

@@ -31,7 +31,7 @@ CHAR_HEX \\[0-9A-Fa-f]{1,2}
 ":="			return ASSIGN;
 ">="			return GE; 
 "<="			return LE; 
-"~=="			return EQ; 
+"~="			return EQ; 
 "<>"			return NE; 
 
 
