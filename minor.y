@@ -9,6 +9,7 @@ extern int yylex();
 #define INFO_ARRAY 0
 #define INFO_INT 1 
 #define INFO_STR 2
+#define INFO_VOID 3
 #define INFO_CONST_ARRAY 10
 #define INFO_CONST_INT 11
 #define INFO_CONST_STR 12
@@ -20,6 +21,7 @@ int strIntExpr(Node* n1, Node*n2);
 int intArrayExpr(Node* n1, Node* n2);
 int strIntExpr(Node* n1, Node* n2);
 int verifyArgs(char* ident, Node* argsNode);
+int arrayPos(Node* lvNode, Node* exprNode);
 %}
 
 %union {
@@ -64,17 +66,22 @@ program	: PROGRAM decls START body END	{ $$ = binNode(PROGRAM, $2, $4); }
 module	: MODULE decls END { $$ = uniNode(MODULE, $2); }
 	;
 
-decl	: function { $$ = $1; }
+decl	: function	{ $$ = $1; }
 	| public opt_initializer { $$ = binNode(ASSIGN, $1, $2); } 
-	| FORWARD CONST var { $$ = uniNode(CONST, $3); }
+	| FORWARD CONST var { $$ = uniNode(CONST, $3);int pos = 0; int type = IDfind($3->value.s, (long*)&pos)+10; IDchange(type, $3->value.s, 0, 0); }
 	| FORWARD var	{ $$ = uniNode(FORWARD, $2); }
 	| public CONST initializer { binNode(CONST, $1, $3); }	
 	;
 
+decls 	:		{ $$ = nilNode(NIL); }
+      	| decl 		{ $$ = uniNode(';', $1); }
+       	| decls ';' decl { $$ = binNode(';', $1, $3); }
+	;
+
 opt_initializer
-	: ARRAY IDENT array_size array_assign { $$ = triNode(ASSIGN, strNode(IDENT, $2), $3, $4); }
-        | NUMBER IDENT number_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); }
-        | STRING IDENT string_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); }
+	: ARRAY IDENT array_size array_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), binNode('[', $3, $4)); IDnew(INFO_ARRAY, $2, 0); }
+        | NUMBER IDENT number_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); IDnew(INFO_INT, $2, 0); }
+        | STRING IDENT string_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); IDnew(INFO_STR, $2, 0); }
 	;
 
 array_size
@@ -98,23 +105,19 @@ string_assign
 	; 
 
 initializer
-	: ARRAY IDENT ASSIGN array_size array_init { $$ = triNode(ASSIGN, strNode(IDENT, $2), $4, uniNode(ARRAY, $5)); }
- 	| NUMBER IDENT ASSIGN INTEGER { $$ = binNode(ASSIGN, strNode(IDENT, $2), intNode(NUMBER, $4)); }
-	| STRING IDENT ASSIGN string { $$ = binNode(ASSIGN, strNode(IDENT, $2), uniNode(STRING, $4)); } 
+	: ARRAY IDENT ASSIGN array_size array_init { $$ = triNode(ASSIGN, strNode(IDENT, $2), $4, uniNode(ARRAY, $5)); IDnew(INFO_ARRAY, $2, 0); }
+ 	| NUMBER IDENT ASSIGN INTEGER { $$ = binNode(ASSIGN, strNode(IDENT, $2), intNode(NUMBER, $4)); IDnew(INFO_INT, $2, 0); }
+	| STRING IDENT ASSIGN string { $$ = binNode(ASSIGN, strNode(IDENT, $2), uniNode(STRING, $4)); IDnew(INFO_STR, $2, 0); } 
 
-decls 	:		{ $$ = nilNode(NIL); }
-      	| decl 		{ $$ = uniNode(';', $1); }
-       	| decls ';' decl { $$ = binNode(';', $1, $3); }
+
+function: FUNCTION FORWARD type IDENT params DONE { $$ = quadNode(';', nilNode(FORWARD), $3, strNode(IDENT, $4), $5); IDnew($3->value.i, $4, 0);/*TODO: add params */ }
+       	| FUNCTION public type IDENT params DO body return { $$ = triNode(FUNCTION, quadNode(';', $2, $3, strNode(IDENT, $4), $5), $7 ,$8); IDnew($3->value.i, $4, 0);}
 	;
 
-function: FUNCTION FORWARD type IDENT params DONE { $$ = quadNode(';', nilNode(FORWARD), $3, strNode(IDENT, $4), $5); }
-       	| FUNCTION public type IDENT params DO body return { $$ = triNode(FUNCTION, quadNode(';', $2, $3, strNode(IDENT, $4), $5), $7 ,$8); }
-	;
-
-var	: NUMBER IDENT	{ $$ = strNode(NUMBER, $2); }
-    	| STRING IDENT	{ $$ = strNode(STRING, $2); }
-	| ARRAY IDENT	{ $$ = strNode(ARRAY, $2); }
-    	| ARRAY IDENT '[' INTEGER ']' { $$ = binNode(ARRAY, strNode(STRING, $2), intNode(INTEGER, $4)); }
+var	: NUMBER IDENT	{ $$ = strNode(NUMBER, $2);printf("==%s==\n", $2); IDnew(INFO_INT, $2, 0); }
+    	| STRING IDENT	{ $$ = strNode(STRING, $2); IDnew(INFO_STR, $2, 0);}
+	| ARRAY IDENT	{ $$ = strNode(ARRAY, $2); IDnew(INFO_ARRAY, $2, 0);}
+    	| ARRAY IDENT '[' INTEGER ']' { $$ = binNode(ARRAY, strNode(STRING, $2), intNode(INTEGER, $4)); IDnew(INFO_ARRAY, $2, 0);}
 	;
 
 params	:		{ $$ = nilNode(NIL); }
@@ -130,15 +133,15 @@ vars 	: var ';'	{ $$ = uniNode(';', $1); }
 	| vars var ';'	{ $$ = binNode(';', $1, $2); }
 	;
 
-lvalue	: IDENT		{ $$ = strNode(IDENT, $1);}
-       	| lvalue '[' expr ']' { $$ = binNode(IDENT, $1, $3); }
+lvalue	: IDENT		{ $$ = strNode(IDENT, $1); long pos = 0; $$->info = IDfind($1, &pos);}
+       	| lvalue '[' expr ']' { $$ = binNode(IDENT, $1, $3); $$->info = arrayPos($1, $3); }
 	| '*' lvalue	{ $$ = uniNode('*', $2); }
 	; 
 
-type	: NUMBER	{ $$ = nilNode(NUMBER); } 
-	| STRING	{ $$ = nilNode(STRING); }
-	| ARRAY 	{ $$ = nilNode(ARRAY); } 
-	| VOID		{ $$ = nilNode(VOID); }
+type	: NUMBER	{ $$ = intNode(NUMBER, INFO_INT); } 
+	| STRING	{ $$ = intNode(STRING, INFO_STR); }
+	| ARRAY 	{ $$ = intNode(ARRAY, INFO_ARRAY); } 
+	| VOID		{ $$ = intNode(VOID, INFO_VOID); }
 	;
 
 public  : 		{ $$ = nilNode(NIL); }
@@ -269,7 +272,8 @@ int intExpr(Node* n1, Node* n2) {
 
 int intArrayExpr(Node* n1, Node* n2) {
 	if(!((n1->info == INFO_INT && n2->info == INFO_ARRAY)
-	||(n2->info == INFO_INT && n1->info == INFO_ARRAY)))
+	||(n2->info == INFO_INT && n1->info == INFO_ARRAY)
+	||(n1->info == INFO_INT && n2->info == INFO_INT)))
 		yyerror("expression only allows int type or pointer arithmetic");
 	if(n1->info == INFO_INT && n2->info == INFO_INT)
 		return INFO_INT;
@@ -279,10 +283,23 @@ int intArrayExpr(Node* n1, Node* n2) {
 int strIntExpr(Node* n1, Node*n2) {
 	if(n1->info != n2->info)
 		yyerror("different types");
-	if(n1->info != INFO_INT || n1->info != INFO_STR)
+	if(n1->info != INFO_INT && n1->info != INFO_STR)
 		yyerror("operator only allow string and int types");
 	return INFO_INT;
 }
 
 int verifyArgs(char* ident, Node* argsNode){return 0;}
+
+int arrayPos(Node* lvNode, Node* exprNode) {
+	int pos = 0;
+	int type = IDfind(lvNode->value.s, (long*)&pos);
+	
+	if(type < 0) yyerror("couldn't find identifier");
+
+	if(type != INFO_ARRAY || type != INFO_CONST_ARRAY)
+		yyerror("the left value needs to be an array");
+	
+	return INFO_INT;	
+
+}
 
