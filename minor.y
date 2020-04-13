@@ -5,6 +5,21 @@
 #include "node.h"
 #include "tabid.h"
 extern int yylex();
+
+#define INFO_ARRAY 0
+#define INFO_INT 1 
+#define INFO_STR 2
+#define INFO_CONST_ARRAY 10
+#define INFO_CONST_INT 11
+#define INFO_CONST_STR 12
+
+int verifyAssign(Node* lvNode, Node* valNode);
+int intOnly(Node* n);
+int intExpr(Node* n1, Node* n2);
+int strIntExpr(Node* n1, Node*n2);
+int intArrayExpr(Node* n1, Node* n2);
+int strIntExpr(Node* n1, Node* n2);
+int verifyArgs(char* ident, Node* argsNode);
 %}
 
 %union {
@@ -116,7 +131,7 @@ vars 	: var ';'	{ $$ = uniNode(';', $1); }
 	;
 
 lvalue	: IDENT		{ $$ = strNode(IDENT, $1);}
-       	| IDENT '[' expr ']' { $$ = binNode(IDENT, strNode(IDENT, $1), $3); }
+       	| lvalue '[' expr ']' { $$ = binNode(IDENT, $1, $3); }
 	| '*' lvalue	{ $$ = uniNode('*', $2); }
 	; 
 
@@ -193,29 +208,30 @@ str_symbol
 	| TEXTSTRING	{ $$ = strNode(STRING, $1); }
 	;
 
-expr	: lvalue 	{ $$ = uniNode('*', $1); }
-     	| lvalue ASSIGN expr { $$ = binNode(ASSIGN, $1, $3); }
-	| INTEGER 	{ $$ = intNode(INTEGER, $1); }
-	| string 	{ $$ = $1; }
+expr	: lvalue 	{ $$ = uniNode('*', $1); $$->info = $1->info; }
+     	| lvalue ASSIGN expr { $$ = binNode(ASSIGN, $1, $3); $$->info = verifyAssign($1, $3); }
+	| INTEGER 	{ $$ = intNode(INTEGER, $1); $$->info = INFO_INT; }
+	| string 	{ $$ = $1; $$->info = INFO_STR; }
 	| '-' expr %prec UMINUS { $$ = uniNode('-', $2); }
 	| '?'	 	{ $$ = nilNode('?'); }
 	| '&' lvalue %prec UMINUS { $$ = uniNode('&', $2); }
-	| expr '+' expr	{ $$ = binNode('+', $1, $3); }
-	| expr '-' expr	{ $$ = binNode('-', $1, $3); }
-	| expr '*' expr	{ $$ = binNode('*', $1, $3); }
-	| expr POW expr	{ $$ = binNode('^', $1, $3); }
-	| expr '/' expr	{ $$ = binNode('/', $1, $3); }
-	| expr '%' expr	{ $$ = binNode('%', $1, $3); }
-	| expr '<' expr	{ $$ = binNode('<', $1, $3); }
-	| expr '>' expr	{ $$ = binNode('>', $1, $3); }
-	| expr GE expr	{ $$ = binNode(GE, $1, $3); }
-	| expr LE expr	{ $$ = binNode(LE, $1, $3); }
-	| expr NE expr	{ $$ = binNode(NE, $1, $3); }
-	| expr '=' expr	{ $$ = binNode('=', $1, $3); }
-	| expr '&' expr	{ $$ = binNode('&', $1, $3); }
-	| expr '|' expr { $$ = binNode('|', $1, $3); }
-	| '(' expr ')' 	{ $$ = $2; }
-	| IDENT '(' args ')' { $$ = binNode('(', strNode(IDENT, $1), $3); }
+	| '~' expr	{ $$ = uniNode('~', $2); }
+	| expr '+' expr	{ $$ = binNode('+', $1, $3); $$->info = intArrayExpr($1, $3); }
+	| expr '-' expr	{ $$ = binNode('-', $1, $3);  $$->info = intArrayExpr($1, $3);}
+	| expr '*' expr	{ $$ = binNode('*', $1, $3);  $$->info = intExpr($1, $3);}
+	| expr POW expr	{ $$ = binNode('^', $1, $3);  $$->info = intExpr($1, $3);}
+	| expr '/' expr	{ $$ = binNode('/', $1, $3);  $$->info = intExpr($1, $3);}
+	| expr '%' expr	{ $$ = binNode('%', $1, $3);  $$->info = intExpr($1, $3);}
+	| expr '<' expr	{ $$ = binNode('<', $1, $3); $$->info = strIntExpr($1, $3); }
+	| expr '>' expr	{ $$ = binNode('>', $1, $3); $$->info = strIntExpr($1, $3);}
+	| expr GE expr	{ $$ = binNode(GE, $1, $3); $$->info = strIntExpr($1, $3);}
+	| expr LE expr	{ $$ = binNode(LE, $1, $3); $$->info = strIntExpr($1, $3);}
+	| expr NE expr	{ $$ = binNode(NE, $1, $3); $$->info = strIntExpr($1, $3);}
+	| expr '=' expr	{ $$ = binNode('=', $1, $3); $$->info = strIntExpr($1, $3);}
+	| expr '&' expr	{ $$ = binNode('&', $1, $3); $$->info = intExpr($1, $3);}
+	| expr '|' expr { $$ = binNode('|', $1, $3); $$->info = intExpr($1, $3);}
+	| '(' expr ')' 	{ $$ = $2; $$->info = $2->info; }
+	| IDENT '(' args ')' { $$ = binNode('(', strNode(IDENT, $1), $3); $$->info = verifyArgs($1, $3); }
 	;
 
 %%
@@ -226,13 +242,47 @@ char **yynames =
 		 0;
 #endif
 int yyerror(const char*);
-/*int main(int argc, char *argv[]) {
-	extern YYSTYPE yylval;
-	int tk;
-	while ((tk = yylex()))
-		if (tk > YYERRCODE)
-			printf("%d:\t%s\n", tk, yyname[tk]);
-		else
-			printf("%d:\t%c\n", tk, tk);
-	return 0;
-}*/
+
+int verifyAssign(Node* lvNode, Node* valNode) {
+	int lvInfo = lvNode->info,
+	valInfo = valNode->info;
+	/* lv constant  */
+	if (lvInfo >= INFO_CONST_ARRAY && lvInfo < 20)
+		yyerror("can't make assignment to constant");
+	/* type := type or type := const_type */
+	if (!(lvInfo == valInfo || lvInfo + 10 == valInfo)) 
+		yyerror("invalid assignment");
+	return lvInfo;
+}
+
+int intOnly(Node* n) {
+	if(n->info != INFO_INT)
+		yyerror("int only");
+	return INFO_INT;
+}
+
+int intExpr(Node* n1, Node* n2) {
+	if(n1->info != INFO_INT || n2->info != INFO_INT)
+		 yyerror("int only expression");
+	return INFO_INT;
+}
+
+int intArrayExpr(Node* n1, Node* n2) {
+	if(!((n1->info == INFO_INT && n2->info == INFO_ARRAY)
+	||(n2->info == INFO_INT && n1->info == INFO_ARRAY)))
+		yyerror("expression only allows int type or pointer arithmetic");
+	if(n1->info == INFO_INT && n2->info == INFO_INT)
+		return INFO_INT;
+	return INFO_ARRAY; 
+}
+
+int strIntExpr(Node* n1, Node*n2) {
+	if(n1->info != n2->info)
+		yyerror("different types");
+	if(n1->info != INFO_INT || n1->info != INFO_STR)
+		yyerror("operator only allow string and int types");
+	return INFO_INT;
+}
+
+int verifyArgs(char* ident, Node* argsNode){return 0;}
+
