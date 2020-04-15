@@ -18,8 +18,11 @@ extern int yylex();
 #define INFO_FUNC_INT 21
 #define INFO_FUNC_STR 22
 #define INFO_FUNC_VOID 23
+
 char errmsg[80];
 static int pos = 0;
+static long* funcArgs;
+
 int dim(long type);
 int verifyAssign(Node* lvNode, Node* valNode);
 int intOnly(Node* n);
@@ -27,11 +30,15 @@ int intExpr(Node* n1, Node* n2);
 int strIntExpr(Node* n1, Node*n2);
 int intArrayExpr(Node* n1, Node* n2);
 int strIntExpr(Node* n1, Node* n2);
+void printExpr(Node* n);
 int verifyArgs(char* ident, Node* argsNode);
 int strOrArrayIndex(Node* lvNode, Node* exprNode);
 char* getArrayName(Node* node); 
 void formatedErrorMsg(char* format, char* msg);
 int castCharToInt(Node* n); 
+void nonVoidExpr(Node* n);
+void declFunction(char* name);
+void enterFunction(long type, char* name); 
 %}
 
 %union {
@@ -122,8 +129,8 @@ const_initializer
 	| CONST STRING IDENT ASSIGN string { $$ = binNode(ASSIGN, strNode(IDENT, $3), uniNode(STRING, $5)); int type = INFO_CONST_STR; IDnew(type, $3, pos); pos += dim(type); } 
 	;
 
-function: FUNCTION FORWARD type IDENT { IDnew($3->value.i+20, $4, 0); IDpush(); pos = 0; } params DONE { pos = 0; $$ = uniNode(FUNCTION, binNode(';', binNode(';', nilNode(FORWARD), $3), binNode('(', strNode(IDENT, $4), $6))); IDpop(); }
-       	| FUNCTION public type IDENT { IDnew($3->value.i+20, $4, 0); IDpush(); pos = 0; } params DO { pos = 0; } body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode('{', $8 ,$9)); IDpop(); }
+function: FUNCTION FORWARD type IDENT { enterFunction($3->value.i+40, $4); } params DONE { pos = 0; $$ = uniNode(FUNCTION, binNode(';', binNode(';', nilNode(FORWARD), $3), binNode('(', strNode(IDENT, $4), $6))); declareFunction($4); }
+       	| FUNCTION public type IDENT { enterFunction($3->value.i+20, $4); } params DO { pos = 0; } body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode('{', $8 ,$9)); declareFunction($4); }
 	;
 
 var	: NUMBER IDENT	{ $$ = binNode(NUMBER, intNode('t', INFO_INT), strNode(NUMBER, $2)); }
@@ -133,16 +140,22 @@ var	: NUMBER IDENT	{ $$ = binNode(NUMBER, intNode('t', INFO_INT), strNode(NUMBER
 	;
 
 params	:		{ $$ = nilNode(NIL); }
-	| var		{ $$ = uniNode(';', $1); int type = LEFT_CHILD($1)->value.i; IDnew(type, getArrayName(RIGHT_CHILD($1)), pos); pos += dim(LEFT_CHILD($1)->value.i);  }
+	| var		{ $$ = uniNode(';', $1); 
+				int type = LEFT_CHILD($1)->value.i;
+				IDnew(type, getArrayName(RIGHT_CHILD($1)), pos); 
+				pos += dim(LEFT_CHILD($1)->value.i); 
+				funcArgs[++funcArgs[0]] = type;
+			}
      	| params ';' var { $$ = binNode(';', $1, $3); 
 				int type = LEFT_CHILD($3)->value.i; 
 				IDnew(type, getArrayName(RIGHT_CHILD($3)), pos); 
 				pos += dim(LEFT_CHILD($3)->value.i); 
+				funcArgs[++funcArgs[0]] = type;
 			}
 	;
 
-args	: expr		{ $$ = uniNode(',', $1); }
-     	| args ',' expr	{ $$ = binNode(',', $1, $3); }
+args	: expr		{ $$ = binNode(',', $1, nilNode(NIL)); }
+     	| args ',' expr	{ $$ = binNode(',', $3, $1); }
 	;
 
 vars 	: var ';'	{ $$ = uniNode(';', $1); int type = LEFT_CHILD($1)->value.i; IDnew(type, getArrayName(RIGHT_CHILD($1)), pos); pos += dim(LEFT_CHILD($1)->value.i);  }
@@ -152,7 +165,7 @@ vars 	: var ';'	{ $$ = uniNode(';', $1); int type = LEFT_CHILD($1)->value.i; IDn
 				pos += dim(LEFT_CHILD($2)->value.i); }
 	;
 
-lvalue	: IDENT		{ $$ = strNode(IDENT, $1); $$->info = IDfind($1,(void**)&pos); }
+lvalue	: IDENT		{ $$ = strNode(IDENT, $1); long* args; $$->info = IDfind($1,(void**)&args); if($$->info >= INFO_FUNC_ARRAY && args[0] > 0) yyerror("function requires arguments");}
        	| lvalue '[' expr ']' { $$ = binNode(IDENT, $1, $3); $$->info = strOrArrayIndex($1, $3); }
 	; 
 
@@ -171,8 +184,8 @@ body	: vars stmts 	{ $$ = binNode('{', $1, $2); }
 	;
 				
 array_init
-	: intOrChar	{ $$ = $1; }
-	| array_init ',' intOrChar { $$ = binNode(',', $1, $3); }
+	: INTEGER	{ $$ = intNode(INTEGER, $1); }
+	| array_init ',' INTEGER { $$ = binNode(',', $1, intNode(INTEGER, $3)); }
 	;
 
 intOrChar
@@ -180,11 +193,11 @@ intOrChar
 	| CHAR		{ $$ = intNode(NUMBER, $1); }
 	;
 
-stmt  : IF expr THEN stmts end elifs FI { $$ = quadNode(IF, $2, $4, $5, uniNode(ELIF, $6)); }
-	| IF expr THEN stmts end elifs ELSE stmts end FI { $$ = quadNode(ELSE, triNode(IF, $2, $4, $5), uniNode(ELIF, $6), $8, $9); }  
-	| FOR expr UNTIL expr STEP expr DO stmts end DONE { $$ = binNode(FOR, triNode(',', $2, $4, $6), binNode('{', $8, $9)); } 
+stmt  : IF expr THEN stmts end elifs FI { $$ = quadNode(IF, $2, $4, $5, uniNode(ELIF, $6)); nonVoidExpr($2); }
+	| IF expr THEN stmts end elifs ELSE stmts end FI { $$ = binNode(ELSE, binNode(',', binNode(IF, $2, binNode('{', $4, $5)), uniNode(ELIF, $6)), binNode('{', $8, $9)); nonVoidExpr($2);}  
+	| FOR expr UNTIL expr STEP expr DO stmts end DONE { $$ = binNode(FOR, triNode(',', $2, $4, $6), binNode('{', $8, $9)); nonVoidExpr($2); nonVoidExpr($4);nonVoidExpr($6);} 
 	| expr ';'	{ $$ = $1; }
-	| expr '!'	{ $$ = uniNode('!', $1); }
+	| expr '!'	{ $$ = uniNode('!', $1); printExpr($1); }
 	| lvalue ALOC  expr ';' { $$ = binNode('#', $1, $3); }
 	| error ';'
 	;
@@ -205,7 +218,7 @@ stmts
 	;
 
 elifs	:		{ $$ = nilNode(NIL); }
-	| ELIF expr THEN stmts end elifs { $$ = triNode(ELIF, $2, binNode(ELIF, $4, $5), $6); }
+	| ELIF expr THEN stmts end elifs { $$ = triNode(ELIF, $2, binNode(ELIF, $4, $5), $6); nonVoidExpr($2);}
 	;
 
 string	: TEXTSTRING 	{ $$ = strNode(STRING, $1); }
@@ -265,6 +278,19 @@ int dim(long type) {
 	return 4; // TODO
 }
 
+void enterFunction(long type, char* name) {
+	funcArgs = malloc(50);
+	funcArgs[0] = 0;
+	IDnew(type+20, name, funcArgs);
+	IDpush(); 
+	pos = 0;
+}
+
+void declareFunction(void* name) {
+	IDpop();
+}
+
+
 int verifyAssign(Node* lvNode, Node* valNode) {
 	valNode->info = castCharToInt(valNode);
 	int lvInfo = lvNode->info,
@@ -299,8 +325,8 @@ int intArrayExpr(Node* n1, Node* n2) {
 	printf("OPERATORs -/+: %d , %d\n ",n1->info, n2->info);
 	n1->info = castCharToInt(n1);
 	n2->info = castCharToInt(n2);
-	if(!(n1->info%10 == INFO_INT || n2->info%10 == INFO_INT
-	||n1->info%10 == INFO_ARRAY && n2->info%10 == INFO_ARRAY))
+	if(!(n1->info%10 >= INFO_ARRAY && n1->info%10 <= INFO_INT
+	&& n2->info%10 >= INFO_ARRAY && n2->info%10 <= INFO_INT))
 		yyerror("expression only allows int type or pointer arithmetic");
 	if(n1->info == n2->info)
 		return INFO_INT;
@@ -317,24 +343,40 @@ int strIntExpr(Node* n1, Node*n2) {
 	return INFO_INT;
 }
 
+void printExpr(Node* n) {
+	if(n->info%10 < INFO_ARRAY || n->info%10 > INFO_STR)
+		yyerror("can only print arrays, strings and intergers");
+}
+
 int verifyArgs(char* name, Node* argsNode){
-	// Add args verifications
-	int* defArgs;
-	int type = IDfind(name, (void**)&defArgs);
-/*	
-	if (typ < 20) {
+	long* defArgs;
+	int type = IDfind(name, (void**)&defArgs);	
+	if (type < 20) {
+		char* format = "\"%s\" is not a function";
+		formatedErrorMsg(format, name);
 		return 0;
-	} else if (defArgs[0] != 0 && argsNode[0] == 0) {		
-		char* format = "\"%s\" function requires arguments";
-		formatedErrorMsg(format, name);		
-	} else if (defArgs[0] == 0 && argsNode[0] != 0) {
+	} else if (defArgs[0] == 0 && argsNode != 0) {
 		char* format = "\"%s\" function doesn't have arguments";
 		formatedErrorMsg(format, name);		
 	} else {
-		// check type
-	}	
-*/	
-	return type-20;
+		int i = defArgs[0];
+		while(argsNode->attrib != NIL && i > 0) {
+			Node* argNode = LEFT_CHILD(argsNode);
+			int defType = defArgs[i];
+			printf("!!! %d !!!!\n", argNode->info);
+			if(argNode->info%10 != defType) {
+				char* format = "\"%s\": invalid argument type";
+				formatedErrorMsg(format, name);
+			}
+			i--;
+			argsNode = RIGHT_CHILD(argsNode);
+		}
+		if(i != 0) {
+			char* format = "\"%s\": wrong number of arguments";
+			formatedErrorMsg(format, name);
+		}
+	}
+	return type%10;
 }
 
 int strOrArrayIndex(Node* lvNode, Node* exprNode) {
@@ -368,6 +410,10 @@ char* getArrayName(Node* node) {
 
 int castCharToInt(Node* n) {
 	return n->info == INFO_CHAR_LIT ? INFO_INT : n->info;
+}
+
+void nonVoidExpr(Node* n) {
+	if(n->info%10 == INFO_VOID) yyerror("invalid void expression");
 }
 
 void formatedErrorMsg(char* format, char* msg) {

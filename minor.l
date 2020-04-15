@@ -92,10 +92,10 @@ CHAR_HEX \\[0-9A-Fa-f][0-9A-Fa-f]?
 <CT>\\.			yyerror("invalid escape sequence in string");
 <CT>[^"]		strcat(yylval.s, yytext);
 
-0{O}+                   { errno = 0; yylval.i = strtol(yytext, 0, 8); if(errno == ERANGE) yyerror("number overflow"); return INTEGER; }
-{D}+			{ errno = 0; yylval.i = strtol(yytext, 0, 10); if(errno == ERANGE) yyerror("number overflow"); return INTEGER; } 
-"0x"{H}+		{ errno = 0; yylval.i = strtol(yytext, 0, 16); if(errno == ERANGE) yyerror("number overflow"); return INTEGER; }
-"0b"{B}+		{ errno = 0; yylval.i = strtol(yytext, 0, 2); if(errno == ERANGE) yyerror("number overflow"); return INTEGER; }
+0{O}+                   { errno = 0; int val = strtol(yytext+1, 0, 8); if(errno == ERANGE || val < 0) yyerror("number overflow"); yylval.i = val; return INTEGER; }
+{D}+			{ errno = 0; int val = strtol(yytext, 0, 10); if(errno == ERANGE || val < 0) yyerror("number overflow"); yylval.i = val; return INTEGER; } 
+"0x"{H}+		{ errno = 0; int val = strtol(yytext+2, 0, 16); if(errno == ERANGE || val < 0) yyerror("number overflow"); yylval.i = val; return INTEGER; }
+"0b"{B}+		{ errno = 0; int val = strtol(yytext+2, 0, 2); if(errno == ERANGE || val < 0) yyerror("number overflow"); yylval.i = val; return INTEGER; }
 
 
 
@@ -117,3 +117,4 @@ void reservedWordError(char* word) {
 	sprintf(errmsg, format, word);
 	yyerror(errmsg);
 }
+
