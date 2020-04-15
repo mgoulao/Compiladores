@@ -21,6 +21,7 @@ extern int yylex();
 
 char errmsg[80];
 static long* funcArgs;
+static int loopLvl = 0, funcLvl = 0, currRetType = 1; 
 
 int dim(long type);
 int verifyAssign(Node* lvNode, Node* valNode);
@@ -78,7 +79,7 @@ file	: program 	{ $$ = uniNode('f', $1); }
 	| module 	{ $$ = uniNode('f', $1); } 
       	;
 
-program	: PROGRAM decls START body END	{ $$ = binNode(PROGRAM, $2, $4); }
+program	: PROGRAM decls START { IDpush(); currRetType = INFO_INT; } body END { $$ = binNode(PROGRAM, $2, $5); IDpop(); }
 	;
 
 module	: MODULE decls END { $$ = uniNode(MODULE, $2); }
@@ -129,7 +130,7 @@ const_initializer
 	;
 
 function: FUNCTION FORWARD type IDENT { enterFunction($3->value.i+40, $4); } params DONE { $$ = uniNode(FUNCTION, binNode(';', binNode(';', nilNode(FORWARD), $3), binNode('(', strNode(IDENT, $4), $6))); declareFunction($4); }
-       	| FUNCTION public type IDENT { enterFunction($3->value.i+20, $4); } params DO body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode('{', $8 ,$9)); declareFunction($4); }
+       	| FUNCTION public type IDENT { enterFunction($3->value.i+20+$2->info, $4); currRetType = $3->value.i;} params DO body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode('{', $8 ,$9)); declareFunction($4); }
 	;
 
 var	: NUMBER IDENT	{ $$ = binNode(NUMBER, intNode('t', INFO_INT), strNode(NUMBER, $2)); }
@@ -172,8 +173,8 @@ type	: NUMBER	{ $$ = intNode(NUMBER, INFO_INT); }
 	| VOID		{ $$ = intNode(VOID, INFO_VOID); }
 	;
 
-public  : 		{ $$ = nilNode(NIL); }
-	| PUBLIC 	{ $$ = nilNode(PUBLIC); }
+public  : 		{ $$ = nilNode(NIL); $$->info = 0;}
+	| PUBLIC 	{ $$ = nilNode(PUBLIC); $$->info = 10; }
 	;
 
 body	: vars stmts 	{ $$ = binNode('{', $1, $2); }
@@ -192,7 +193,7 @@ intOrChar
 
 stmt  : IF expr THEN stmts end elifs FI { $$ = quadNode(IF, $2, $4, $5, uniNode(ELIF, $6)); nonVoidExpr($2); }
 	| IF expr THEN stmts end elifs ELSE stmts end FI { $$ = binNode(ELSE, binNode(',', binNode(IF, $2, binNode('{', $4, $5)), uniNode(ELIF, $6)), binNode('{', $8, $9)); nonVoidExpr($2);}  
-	| FOR expr UNTIL expr STEP expr DO stmts end DONE { $$ = binNode(FOR, triNode(',', $2, $4, $6), binNode('{', $8, $9)); nonVoidExpr($2); nonVoidExpr($4);nonVoidExpr($6);} 
+	| FOR expr UNTIL expr STEP expr DO {loopLvl++;} stmts end DONE { $$ = binNode(FOR, triNode(',', $2, $4, $6), binNode('{', $9, $10)); nonVoidExpr($2); nonVoidExpr($4);nonVoidExpr($6);} 
 	| expr ';'	{ $$ = $1; }
 	| expr '!'	{ $$ = uniNode('!', $1); printExpr($1); }
 	| lvalue ALOC  expr ';' { $$ = binNode('#', $1, $3); }
@@ -200,13 +201,13 @@ stmt  : IF expr THEN stmts end elifs FI { $$ = quadNode(IF, $2, $4, $5, uniNode(
 	;
 
 end	: return	{ $$ = $1; }
-	| REPEAT	{ $$ = nilNode(REPEAT); }
-	| STOP		{ $$ = nilNode(STOP); }
+	| REPEAT	{ $$ = nilNode(REPEAT); if(!loopLvl) yyerror("invalid repeat statement"); }
+	| STOP		{ $$ = nilNode(STOP); if(!loopLvl) yyerror("invalid stop statement");}
 	;
 
 return	:		{ $$ = nilNode(RETURN); }
-      	| RETURN	{ $$ = nilNode(RETURN); }
-       	| RETURN expr	{ $$ = uniNode(RETURN, $2); }
+      	| RETURN	{ $$ = nilNode(RETURN); if(!IDlevel() || currRetType != INFO_VOID) yyerror("invalid return statement");}
+       	| RETURN expr	{ $$ = uniNode(RETURN, $2); if(!IDlevel() || currRetType != $2->info%10) yyerror("invalid return statement");}
 	;
 
 stmts
