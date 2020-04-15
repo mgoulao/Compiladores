@@ -10,6 +10,7 @@ extern int yylex();
 #define INFO_INT 1 
 #define INFO_STR 2
 #define INFO_VOID 3
+#define INFO_CHAR_LIT 4
 #define INFO_CONST_ARRAY 10
 #define INFO_CONST_INT 11
 #define INFO_CONST_STR 12
@@ -17,7 +18,7 @@ extern int yylex();
 #define INFO_FUNC_INT 21
 #define INFO_FUNC_STR 22
 #define INFO_FUNC_VOID 23
-char* errmsg[80];
+char errmsg[80];
 static int pos = 0;
 int dim(long type);
 int verifyAssign(Node* lvNode, Node* valNode);
@@ -30,6 +31,7 @@ int verifyArgs(char* ident, Node* argsNode);
 int strOrArrayIndex(Node* lvNode, Node* exprNode);
 char* getArrayName(Node* node); 
 void formatedErrorMsg(char* format, char* msg);
+int castCharToInt(Node* n); 
 %}
 
 %union {
@@ -38,7 +40,7 @@ void formatedErrorMsg(char* format, char* msg);
     Node* n;	/* Node pointer */
 };
 
-%token <i> INTEGER
+%token <i> INTEGER CHAR
 %token <s> IDENT TEXTSTRING
 %token MODULE PROGRAM START END VOID CONST NUMBER ARRAY STRING FUNCTION ALOC 
 %token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN NIL
@@ -57,8 +59,8 @@ void formatedErrorMsg(char* format, char* msg);
 %nonassoc '[' '('
 
 %type <n> file program module decl opt_initializer const_initializer decls
-%type <n> function public var params args vars lvalue type body literal array_init
-%type <n> literals  stmt return stmts elifs string str_init str_continuation
+%type <n> function public var params args intOrChar vars lvalue type body array_init
+%type <n> stmt return stmts elifs string str_init str_continuation
 %type <n> str_symbol expr array_assign number_assign string_assign array_size end
 
 %%
@@ -90,7 +92,7 @@ decls 	:		{ $$ = nilNode(NIL); }
 
 opt_initializer
 	: ARRAY IDENT array_size array_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), binNode('[', $3, $4)); IDnew(INFO_ARRAY, $2, pos); }
-        | NUMBER IDENT number_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); IDnew(INFO_INT, $2, pos); printf("|||| %s \n", $2);}
+        | NUMBER IDENT number_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); IDnew(INFO_INT, $2, pos); }
         | STRING IDENT string_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); IDnew(INFO_STR, $2, pos); }
 	;
 
@@ -106,7 +108,7 @@ array_assign
 
 number_assign
 	:		{ $$ = nilNode(NIL); }
-	| ASSIGN INTEGER { $$ = intNode(ASSIGN, $2); }
+	| ASSIGN intOrChar { $$ = $2; }
 	;
 
 string_assign
@@ -116,7 +118,7 @@ string_assign
 
 const_initializer
 	: CONST ARRAY IDENT ASSIGN array_size array_init { $$ = binNode(ASSIGN, strNode(IDENT, $3), binNode('[', $5, uniNode(ARRAY, $6)));  int type = INFO_CONST_ARRAY; IDnew(type, $3, pos); pos += dim(type); }
- 	| CONST NUMBER IDENT ASSIGN INTEGER { $$ = binNode(ASSIGN, strNode(IDENT, $3), intNode(NUMBER, $5)); int type = INFO_CONST_INT; IDnew(type, $3, pos); pos += dim(type); }
+ 	| CONST NUMBER IDENT ASSIGN intOrChar { $$ = binNode(ASSIGN, strNode(IDENT, $3), $5); int type = INFO_CONST_INT; IDnew(type, $3, pos); pos += dim(type); }
 	| CONST STRING IDENT ASSIGN string { $$ = binNode(ASSIGN, strNode(IDENT, $3), uniNode(STRING, $5)); int type = INFO_CONST_STR; IDnew(type, $3, pos); pos += dim(type); } 
 	;
 
@@ -152,7 +154,6 @@ vars 	: var ';'	{ $$ = uniNode(';', $1); int type = LEFT_CHILD($1)->value.i; IDn
 
 lvalue	: IDENT		{ $$ = strNode(IDENT, $1); $$->info = IDfind($1,(void**)&pos); }
        	| lvalue '[' expr ']' { $$ = binNode(IDENT, $1, $3); $$->info = strOrArrayIndex($1, $3); }
-	| '*' lvalue	{ $$ = uniNode('*', $2); }
 	; 
 
 type	: NUMBER	{ $$ = intNode(NUMBER, INFO_INT); } 
@@ -169,16 +170,14 @@ body	: vars stmts 	{ $$ = binNode('{', $1, $2); }
 	| stmts     	{ $$ = uniNode('{', $1); }  
 	;
 				
-literal	: INTEGER	{ $$ = intNode(NUMBER, $1); }
-	;
-
 array_init
-	: INTEGER	{ $$ = intNode(NUMBER, $1); }
-	| array_init ',' INTEGER { $$ = binNode(',', $1, intNode(INTEGER, $3)); }
+	: intOrChar	{ $$ = $1; }
+	| array_init ',' intOrChar { $$ = binNode(',', $1, $3); }
 	;
 
-literals: literal	{ $$ = uniNode('.', $1); }
-	| string	{ $$ = uniNode(STRING, $1); }
+intOrChar
+	: INTEGER	{ $$ = intNode(NUMBER, $1); }
+	| CHAR		{ $$ = intNode(NUMBER, $1); }
 	;
 
 stmt  : IF expr THEN stmts end elifs FI { $$ = quadNode(IF, $2, $4, $5, uniNode(ELIF, $6)); }
@@ -190,9 +189,7 @@ stmt  : IF expr THEN stmts end elifs FI { $$ = quadNode(IF, $2, $4, $5, uniNode(
 	| error ';'
 	;
 
-end	:		{ $$ = nilNode('}'); }
-        | RETURN        { $$ = nilNode(RETURN); }
-        | RETURN expr   { $$ = uniNode(RETURN, $2); }
+end	: return	{ $$ = $1; }
 	| REPEAT	{ $$ = nilNode(REPEAT); }
 	| STOP		{ $$ = nilNode(STOP); }
 	;
@@ -224,7 +221,7 @@ str_init: str_symbol str_symbol	{ $$ = binNode(STRING, $1, $2); }
 	;
 
 str_symbol
-	: INTEGER	{ $$ = intNode(INTEGER, $1); }
+	: intOrChar	{ $$ = $1; }
 	| TEXTSTRING	{ $$ = strNode(STRING, $1); }
 	;
 
@@ -232,6 +229,7 @@ expr	: lvalue 	{ $$ = uniNode('*', $1); $$->info = $1->info; }
      	| lvalue ASSIGN expr { $$ = binNode(ASSIGN, $1, $3); $$->info = verifyAssign($1, $3); }
 	| INTEGER 	{ $$ = intNode(INTEGER, $1); $$->info = INFO_INT; }
 	| string 	{ $$ = $1; $$->info = INFO_STR; }
+	| CHAR	 	{ $$ = intNode(CHAR, $1); $$->info = INFO_CHAR_LIT; }
 	| '-' expr %prec UMINUS { $$ = uniNode('-', $2); $$->info = intOnly($2);}
 	| '?'	 	{ $$ = nilNode('?'); $$->info = INFO_INT; }
 	| '&' lvalue %prec UMINUS { $$ = uniNode('&', $2); $$->info = intOnly($2); }
@@ -268,25 +266,30 @@ int dim(long type) {
 }
 
 int verifyAssign(Node* lvNode, Node* valNode) {
+	valNode->info = castCharToInt(valNode);
 	int lvInfo = lvNode->info,
 	valInfo = valNode->info;
-	/* lv constant  */
+	/* lvalue is a constant  */
 	printf("==== %d, %d  =====\n",lvInfo, valInfo);
 	if (lvInfo >= INFO_CONST_ARRAY && lvInfo < 20)
 		yyerror("can't make assignment to constant");
-	/* type := type or type := const_type or any := 0 */
-	if (!(lvInfo == valInfo || lvInfo + 10 == valInfo || valNode->value.i == 0)) 
+	/* type := type or type := const_type or any := 0 or string[index] := char */
+	if (!(lvInfo == valInfo || lvInfo + 10 == valInfo || valNode->value.i == 0
+		|| (lvInfo%10 == INFO_STR && valInfo == INFO_CHAR_LIT))) 
 		yyerror("invalid assignment");
 	return lvInfo;
 }
 
 int intOnly(Node* n) {
-	if(n->info != INFO_INT)
+	n->info = castCharToInt(n);
+	if(n->info%10 != INFO_INT)
 		yyerror("int only");
 	return INFO_INT;
 }
 
 int intExpr(Node* n1, Node* n2) {
+	n1->info = castCharToInt(n1);
+	n2->info = castCharToInt(n2);
 	if(n1->info != INFO_INT || n2->info != INFO_INT)
 		 yyerror("int only expression");
 	return INFO_INT;
@@ -294,6 +297,8 @@ int intExpr(Node* n1, Node* n2) {
 
 int intArrayExpr(Node* n1, Node* n2) {
 	printf("OPERATORs -/+: %d , %d\n ",n1->info, n2->info);
+	n1->info = castCharToInt(n1);
+	n2->info = castCharToInt(n2);
 	if(!(n1->info%10 == INFO_INT || n2->info%10 == INFO_INT
 	||n1->info%10 == INFO_ARRAY && n2->info%10 == INFO_ARRAY))
 		yyerror("expression only allows int type or pointer arithmetic");
@@ -303,9 +308,11 @@ int intArrayExpr(Node* n1, Node* n2) {
 }
 
 int strIntExpr(Node* n1, Node*n2) {
+	n1->info = castCharToInt(n1);
+	n2->info = castCharToInt(n2);
 	if(n1->info%10 != n2->info%10)
 		yyerror("different types");
-	if(n1->info != INFO_INT && n1->info != INFO_STR)
+	if(n1->info%10 != INFO_INT && n1->info%10 != INFO_STR)
 		yyerror("operator only allow string and int types");
 	return INFO_INT;
 }
@@ -314,7 +321,7 @@ int verifyArgs(char* name, Node* argsNode){
 	// Add args verifications
 	int* defArgs;
 	int type = IDfind(name, (void**)&defArgs);
-	
+/*	
 	if (typ < 20) {
 		return 0;
 	} else if (defArgs[0] != 0 && argsNode[0] == 0) {		
@@ -326,7 +333,7 @@ int verifyArgs(char* name, Node* argsNode){
 	} else {
 		// check type
 	}	
-	
+*/	
 	return type-20;
 }
 
@@ -338,15 +345,15 @@ int strOrArrayIndex(Node* lvNode, Node* exprNode) {
 
 	if(type != INFO_ARRAY && type != INFO_CONST_ARRAY
 		&& type != INFO_STR && type != INFO_CONST_STR)
-		yyerror("the left value needs to be an array");
+		yyerror("the left value needs to be an array or a string");
 	
 	if(exprNode->info%10 != INFO_INT)
 		yyerror("index value must be a number");	
 
-	if(type == INFO_ARRAY || type == INFO_CONST_ARRAY)
+	// if(type == INFO_ARRAY || type == INFO_CONST_ARRAY)
 		return INFO_INT;	
 	
-	return INFO_STR;
+	//return INFO_STR;
 }
 
 char* getArrayName(Node* node) {
@@ -357,6 +364,10 @@ char* getArrayName(Node* node) {
 	else
 		name = node->value.s;
 	return name;
+}
+
+int castCharToInt(Node* n) {
+	return n->info == INFO_CHAR_LIT ? INFO_INT : n->info;
 }
 
 void formatedErrorMsg(char* format, char* msg) {

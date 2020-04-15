@@ -4,7 +4,7 @@
 #include <errno.h>
 #include "node.h" 
 #include "y.tab.h" 
-char* errmsg[80];
+char errmsg[80];
 char* dupstr(const char *s);
 extern void yyerror(const char *msg);
 void reservedWordError(char* word);
@@ -39,8 +39,8 @@ CHAR_HEX \\[0-9A-Fa-f][0-9A-Fa-f]?
 "#"			return ALOC;
 "^"			return POW;
 
-"program"		reservedWordError(yytext);
-"module"		reservedWordError(yytext);
+^"program"		reservedWordError(yytext);
+^"module"		reservedWordError(yytext);
 
 "start"			return START;
 "end" 			BEGIN FIN; return END;
@@ -113,7 +113,7 @@ int yywrap(void) {
 char *getyytext() { return yytext; }
 
 void reservedWordError(char* word) {
-	char* format = "\"%s\" is a reserved word" ;
+	const char* format = "\"%s\" is a reserved word" ;
 	sprintf(errmsg, format, word);
 	yyerror(errmsg);
 }
