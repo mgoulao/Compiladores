@@ -20,7 +20,6 @@ extern int yylex();
 #define INFO_FUNC_VOID 23
 
 char errmsg[80];
-static int pos = 0;
 static long* funcArgs;
 
 int dim(long type);
@@ -87,8 +86,8 @@ module	: MODULE decls END { $$ = uniNode(MODULE, $2); }
 
 decl	: function	{ $$ = $1; }
 	| public opt_initializer { $$ = binNode(ASSIGN, $1, $2); } 
-	| FORWARD CONST var { $$ = uniNode(CONST, $3); int type = LEFT_CHILD($3)->value.i+10; IDnew(type, RIGHT_CHILD($3)->value.s, pos); pos += dim(LEFT_CHILD($3)->value.i); }
-	| FORWARD var	{ $$ = uniNode(FORWARD, $2); int type = LEFT_CHILD($2)->value.i; IDnew(type, RIGHT_CHILD($2)->value.s, pos); pos += dim(LEFT_CHILD($2)->value.i); }
+	| FORWARD CONST var { $$ = uniNode(CONST, $3); int type = LEFT_CHILD($3)->value.i+10; IDnew(type, RIGHT_CHILD($3)->value.s, 0); }
+	| FORWARD var	{ $$ = uniNode(FORWARD, $2); int type = LEFT_CHILD($2)->value.i; IDnew(type, RIGHT_CHILD($2)->value.s, 0); }
 	| public const_initializer { binNode(CONST, $1, $2); }	
 	;
 
@@ -98,9 +97,9 @@ decls 	:		{ $$ = nilNode(NIL); }
 	;
 
 opt_initializer
-	: ARRAY IDENT array_size array_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), binNode('[', $3, $4)); IDnew(INFO_ARRAY, $2, pos); }
-        | NUMBER IDENT number_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); IDnew(INFO_INT, $2, pos); }
-        | STRING IDENT string_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); IDnew(INFO_STR, $2, pos); }
+	: ARRAY IDENT array_size array_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), binNode('[', $3, $4)); IDnew(INFO_ARRAY, $2, 0); }
+        | NUMBER IDENT number_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); IDnew(INFO_INT, $2, 0); }
+        | STRING IDENT string_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); IDnew(INFO_STR, $2, 0); }
 	;
 
 array_size
@@ -124,13 +123,13 @@ string_assign
 	; 
 
 const_initializer
-	: CONST ARRAY IDENT ASSIGN array_size array_init { $$ = binNode(ASSIGN, strNode(IDENT, $3), binNode('[', $5, uniNode(ARRAY, $6)));  int type = INFO_CONST_ARRAY; IDnew(type, $3, pos); pos += dim(type); }
- 	| CONST NUMBER IDENT ASSIGN intOrChar { $$ = binNode(ASSIGN, strNode(IDENT, $3), $5); int type = INFO_CONST_INT; IDnew(type, $3, pos); pos += dim(type); }
-	| CONST STRING IDENT ASSIGN string { $$ = binNode(ASSIGN, strNode(IDENT, $3), uniNode(STRING, $5)); int type = INFO_CONST_STR; IDnew(type, $3, pos); pos += dim(type); } 
+	: CONST ARRAY IDENT ASSIGN array_size array_init { $$ = binNode(ASSIGN, strNode(IDENT, $3), binNode('[', $5, uniNode(ARRAY, $6)));  int type = INFO_CONST_ARRAY; IDnew(type, $3, 0); }
+ 	| CONST NUMBER IDENT ASSIGN intOrChar { $$ = binNode(ASSIGN, strNode(IDENT, $3), $5); int type = INFO_CONST_INT; IDnew(type, $3, 0); }
+	| CONST STRING IDENT ASSIGN string { $$ = binNode(ASSIGN, strNode(IDENT, $3), uniNode(STRING, $5)); int type = INFO_CONST_STR; IDnew(type, $3, 0); } 
 	;
 
-function: FUNCTION FORWARD type IDENT { enterFunction($3->value.i+40, $4); } params DONE { pos = 0; $$ = uniNode(FUNCTION, binNode(';', binNode(';', nilNode(FORWARD), $3), binNode('(', strNode(IDENT, $4), $6))); declareFunction($4); }
-       	| FUNCTION public type IDENT { enterFunction($3->value.i+20, $4); } params DO { pos = 0; } body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode('{', $8 ,$9)); declareFunction($4); }
+function: FUNCTION FORWARD type IDENT { enterFunction($3->value.i+40, $4); } params DONE { $$ = uniNode(FUNCTION, binNode(';', binNode(';', nilNode(FORWARD), $3), binNode('(', strNode(IDENT, $4), $6))); declareFunction($4); }
+       	| FUNCTION public type IDENT { enterFunction($3->value.i+20, $4); } params DO body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode('{', $8 ,$9)); declareFunction($4); }
 	;
 
 var	: NUMBER IDENT	{ $$ = binNode(NUMBER, intNode('t', INFO_INT), strNode(NUMBER, $2)); }
@@ -142,14 +141,12 @@ var	: NUMBER IDENT	{ $$ = binNode(NUMBER, intNode('t', INFO_INT), strNode(NUMBER
 params	:		{ $$ = nilNode(NIL); }
 	| var		{ $$ = uniNode(';', $1); 
 				int type = LEFT_CHILD($1)->value.i;
-				IDnew(type, getArrayName(RIGHT_CHILD($1)), pos); 
-				pos += dim(LEFT_CHILD($1)->value.i); 
+				IDnew(type, getArrayName(RIGHT_CHILD($1)), 0); 
 				funcArgs[++funcArgs[0]] = type;
 			}
      	| params ';' var { $$ = binNode(';', $1, $3); 
 				int type = LEFT_CHILD($3)->value.i; 
-				IDnew(type, getArrayName(RIGHT_CHILD($3)), pos); 
-				pos += dim(LEFT_CHILD($3)->value.i); 
+				IDnew(type, getArrayName(RIGHT_CHILD($3)), 0); 
 				funcArgs[++funcArgs[0]] = type;
 			}
 	;
@@ -158,11 +155,11 @@ args	: expr		{ $$ = binNode(',', $1, nilNode(NIL)); }
      	| args ',' expr	{ $$ = binNode(',', $3, $1); }
 	;
 
-vars 	: var ';'	{ $$ = uniNode(';', $1); int type = LEFT_CHILD($1)->value.i; IDnew(type, getArrayName(RIGHT_CHILD($1)), pos); pos += dim(LEFT_CHILD($1)->value.i);  }
+vars 	: var ';'	{ $$ = uniNode(';', $1); int type = LEFT_CHILD($1)->value.i; IDnew(type, getArrayName(RIGHT_CHILD($1)), 0); }
 	| vars var ';'	{ $$ = binNode(';', $1, $2); 
 				int type = LEFT_CHILD($2)->value.i;
-				IDnew(type, getArrayName(RIGHT_CHILD($2)), pos); 
-				pos += dim(LEFT_CHILD($2)->value.i); }
+				IDnew(type, getArrayName(RIGHT_CHILD($2)), 0); 
+	 }
 	;
 
 lvalue	: IDENT		{ $$ = strNode(IDENT, $1); long* args; $$->info = IDfind($1,(void**)&args); if($$->info >= INFO_FUNC_ARRAY && args[0] > 0) yyerror("function requires arguments");}
@@ -283,7 +280,6 @@ void enterFunction(long type, char* name) {
 	funcArgs[0] = 0;
 	IDnew(type+20, name, funcArgs);
 	IDpush(); 
-	pos = 0;
 }
 
 void declareFunction(void* name) {
@@ -380,8 +376,7 @@ int verifyArgs(char* name, Node* argsNode){
 }
 
 int strOrArrayIndex(Node* lvNode, Node* exprNode) {
-	long pos = 0;
-	int type = IDfind(lvNode->value.s, (void**)&pos);
+	int type = IDfind(lvNode->value.s, 0);
 	
 	if(type < 0) yyerror("couldn't find identifier");
 
@@ -392,10 +387,7 @@ int strOrArrayIndex(Node* lvNode, Node* exprNode) {
 	if(exprNode->info%10 != INFO_INT)
 		yyerror("index value must be a number");	
 
-	// if(type == INFO_ARRAY || type == INFO_CONST_ARRAY)
-		return INFO_INT;	
-	
-	//return INFO_STR;
+	return INFO_INT;		
 }
 
 char* getArrayName(Node* node) {
