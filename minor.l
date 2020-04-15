@@ -1,10 +1,13 @@
 %{ 
 #include <stdlib.h> 
 #include <string.h> 
+#include <errno.h>
 #include "node.h" 
 #include "y.tab.h" 
-char *dupstr(const char *s);
+char* errmsg[80];
+char* dupstr(const char *s);
 extern void yyerror(const char *msg);
+void reservedWordError(char* word);
 int hasStarted = 0, charRead = 0;
 %} 
 
@@ -36,6 +39,9 @@ CHAR_HEX \\[0-9A-Fa-f][0-9A-Fa-f]?
 "#"			return ALOC;
 "^"			return POW;
 
+"program"		reservedWordError(yytext);
+"module"		reservedWordError(yytext);
+
 "start"			return START;
 "end" 			BEGIN FIN; return END;
 "void"			return VOID;
@@ -65,7 +71,7 @@ CHAR_HEX \\[0-9A-Fa-f][0-9A-Fa-f]?
 
 
 \'			{ BEGIN CI; charRead = 0; } 
-<CI>\'			{ if(charRead == 0){ yyerror("empty char"); } else if(charRead > 1) { yyerror("multiple character char"); }BEGIN INITIAL; return INTEGER;}
+<CI>\'			{ if(charRead == 0){ yyerror("empty char"); } else if(charRead > 1) { yyerror("multiple character char"); }BEGIN INITIAL; return CHAR;}
 <CI>\\\'		{yylval.i = (int) '\''; charRead++;}
 <CI>\\\\		{yylval.i = (int) '\\'; charRead++;}
 <CI>\\n			{yylval.i = (int) '\n'; charRead++;}
@@ -86,10 +92,11 @@ CHAR_HEX \\[0-9A-Fa-f][0-9A-Fa-f]?
 <CT>\\.			yyerror("invalid escape sequence in string");
 <CT>[^"]		strcat(yylval.s, yytext);
 
-0{O}+                   yylval.i = strtol(yytext, 0, 8); return INTEGER;
-{D}+			yylval.i = strtol(yytext, 0, 10); return INTEGER; 
-"0x"{H}+		yylval.i = strtol(yytext, 0, 16); return INTEGER;
-"0b"{B}+		yylval.i = strtol(yytext, 0, 2); return INTEGER;
+0{O}+                   { errno = 0; yylval.i = strtol(yytext, 0, 8); if(errno == ERANGE) yyerror("number overflow"); return INTEGER; }
+{D}+			{ errno = 0; yylval.i = strtol(yytext, 0, 10); if(errno == ERANGE) yyerror("number overflow"); return INTEGER; } 
+"0x"{H}+		{ errno = 0; yylval.i = strtol(yytext, 0, 16); if(errno == ERANGE) yyerror("number overflow"); return INTEGER; }
+"0b"{B}+		{ errno = 0; yylval.i = strtol(yytext, 0, 2); if(errno == ERANGE) yyerror("number overflow"); return INTEGER; }
+
 
 
 [-+()\[\];:!,.<>=*/%~?|&]	return *yytext; 
@@ -98,5 +105,15 @@ CHAR_HEX \\[0-9A-Fa-f][0-9A-Fa-f]?
  
 .			yyerror("Unknown character"); 
 %% 
-int yywrap(void) { return 1; } 
+int yywrap(void) { 
+	if (YYSTATE == COM) 
+		yyerror("unfinished comment");
+	return 1;
+} 
 char *getyytext() { return yytext; }
+
+void reservedWordError(char* word) {
+	char* format = "\"%s\" is a reserved word" ;
+	sprintf(errmsg, format, word);
+	yyerror(errmsg);
+}
