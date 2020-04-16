@@ -43,7 +43,7 @@ CHAR_HEX \\[0-9A-Fa-f][0-9A-Fa-f]?
 ^"module"		reservedWordError(yytext);
 
 "start"			return START;
-"end" 			BEGIN FIN; return END;
+^"end" 			BEGIN FIN; return END;
 "void"			return VOID;
 "const"			return CONST;
 "number"		return NUMBER;

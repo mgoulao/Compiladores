@@ -4,6 +4,7 @@
 #include <string.h>
 #include "node.h"
 #include "tabid.h"
+
 extern int yylex();
 
 #define INFO_ARRAY 0
@@ -32,12 +33,13 @@ int intArrayExpr(Node* n1, Node* n2);
 int strIntExpr(Node* n1, Node* n2);
 void printExpr(Node* n);
 int verifyArgs(char* ident, Node* argsNode);
+int verifyLVName(char* name);
 int strOrArrayIndex(Node* lvNode, Node* exprNode);
 char* getArrayName(Node* node); 
 void formatedErrorMsg(char* format, char* msg);
 int castCharToInt(Node* n); 
 void nonVoidExpr(Node* n);
-void declFunction(char* name);
+void alocExpr(Node* n1, Node* n2);
 void enterFunction(long type, char* name); 
 %}
 
@@ -105,7 +107,7 @@ opt_initializer
 
 array_size
 	:		{ $$ = nilNode(NIL); }
-	| '[' INTEGER ']' { $$ = intNode('[', $2); }
+	| '[' INTEGER ']' { $$ = intNode('[', $2);  if($2 <= 0) yyerror("invalid array dimension");}
 	;
 
 array_assign
@@ -129,14 +131,14 @@ const_initializer
 	| CONST STRING IDENT ASSIGN string { $$ = binNode(ASSIGN, strNode(IDENT, $3), uniNode(STRING, $5)); int type = INFO_CONST_STR; IDnew(type, $3, 0); } 
 	;
 
-function: FUNCTION FORWARD type IDENT { enterFunction($3->value.i+40, $4); } params DONE { $$ = uniNode(FUNCTION, binNode(';', binNode(';', nilNode(FORWARD), $3), binNode('(', strNode(IDENT, $4), $6))); declareFunction($4); }
-       	| FUNCTION public type IDENT { enterFunction($3->value.i+20+$2->info, $4); currRetType = $3->value.i;} params DO body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode('{', $8 ,$9)); declareFunction($4); }
+function: FUNCTION FORWARD type IDENT { enterFunction($3->value.i+40, $4); } params DONE { $$ = uniNode(FUNCTION, binNode(';', binNode(';', nilNode(FORWARD), $3), binNode('(', strNode(IDENT, $4), $6))); IDpop(); }
+       	| FUNCTION public type IDENT { enterFunction($3->value.i+20+$2->info, $4); currRetType = $3->value.i;} params DO body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode('{', $8 ,$9)); defineFunction($3->value.i+20+$2->info, $4); }
 	;
 
 var	: NUMBER IDENT	{ $$ = binNode(NUMBER, intNode('t', INFO_INT), strNode(NUMBER, $2)); }
     	| STRING IDENT	{ $$ =  binNode(STRING, intNode('t', INFO_STR), strNode(STRING, $2)); }
 	| ARRAY IDENT	{ $$ =  binNode(ARRAY, intNode('t', INFO_ARRAY), strNode(ARRAY, $2)); }
-    	| ARRAY IDENT '[' INTEGER ']' { $$ = binNode(ARRAY, intNode('t', INFO_ARRAY), binNode('[', intNode(INTEGER, $4), strNode(STRING, $2))); }
+    	| ARRAY IDENT '[' INTEGER ']' { $$ = binNode(ARRAY, intNode('t', INFO_ARRAY), binNode('[', intNode(INTEGER, $4), strNode(STRING, $2))); if($4 <= 0) yyerror("invalid array dimension"); }
 	;
 
 params	:		{ $$ = nilNode(NIL); }
@@ -163,7 +165,7 @@ vars 	: var ';'	{ $$ = uniNode(';', $1); int type = LEFT_CHILD($1)->value.i; IDn
 	 }
 	;
 
-lvalue	: IDENT		{ $$ = strNode(IDENT, $1); long* args; $$->info = IDfind($1,(void**)&args); if($$->info >= INFO_FUNC_ARRAY && args[0] > 0) yyerror("function requires arguments");}
+lvalue	: IDENT		{ $$ = strNode(IDENT, $1); $$->info = verifyLVName($1);  }
        	| lvalue '[' expr ']' { $$ = binNode(IDENT, $1, $3); $$->info = strOrArrayIndex($1, $3); }
 	; 
 
@@ -191,12 +193,12 @@ intOrChar
 	| CHAR		{ $$ = intNode(NUMBER, $1); }
 	;
 
-stmt  : IF expr THEN stmts end elifs FI { $$ = quadNode(IF, $2, $4, $5, uniNode(ELIF, $6)); nonVoidExpr($2); }
+stmt  : IF expr THEN stmts end elifs FI { $$ = binNode(IF, $2, binNode('{', binNode('{', $4, $5), uniNode(ELIF, $6))); nonVoidExpr($2); }
 	| IF expr THEN stmts end elifs ELSE stmts end FI { $$ = binNode(ELSE, binNode(',', binNode(IF, $2, binNode('{', $4, $5)), uniNode(ELIF, $6)), binNode('{', $8, $9)); nonVoidExpr($2);}  
-	| FOR expr UNTIL expr STEP expr DO {loopLvl++;} stmts end DONE { $$ = binNode(FOR, triNode(',', $2, $4, $6), binNode('{', $9, $10)); nonVoidExpr($2); nonVoidExpr($4);nonVoidExpr($6);} 
+	| FOR expr UNTIL expr STEP expr DO {loopLvl++;} stmts end DONE { $$ = binNode(FOR, binNode(',', binNode(',', $2, $4), $6), binNode('{', $9, $10)); nonVoidExpr($2); nonVoidExpr($4);nonVoidExpr($6);} 
 	| expr ';'	{ $$ = $1; }
 	| expr '!'	{ $$ = uniNode('!', $1); printExpr($1); }
-	| lvalue ALOC  expr ';' { $$ = binNode('#', $1, $3); }
+	| lvalue ALOC  expr ';' { $$ = binNode('#', $1, $3); alocExpr($1, $3); }
 	| error ';'
 	;
 
@@ -207,7 +209,7 @@ end	: return	{ $$ = $1; }
 
 return	:		{ $$ = nilNode(RETURN); }
       	| RETURN	{ $$ = nilNode(RETURN); if(!IDlevel() || currRetType != INFO_VOID) yyerror("invalid return statement");}
-       	| RETURN expr	{ $$ = uniNode(RETURN, $2); if(!IDlevel() || currRetType != $2->info%10) yyerror("invalid return statement");}
+       	| RETURN expr	{ $$ = uniNode(RETURN, $2); if(!IDlevel() || currRetType != $2->info%10 || currRetType%10 == INFO_VOID) yyerror("invalid return statement");}
 	;
 
 stmts
@@ -216,7 +218,7 @@ stmts
 	;
 
 elifs	:		{ $$ = nilNode(NIL); }
-	| ELIF expr THEN stmts end elifs { $$ = triNode(ELIF, $2, binNode(ELIF, $4, $5), $6); nonVoidExpr($2);}
+	| ELIF expr THEN stmts end elifs { $$ = binNode(ELIF, $2, binNode('{', binNode('{', $4, $5), $6)); nonVoidExpr($2);}
 	;
 
 string	: TEXTSTRING 	{ $$ = strNode(STRING, $1); }
@@ -272,18 +274,36 @@ char **yynames =
 #endif
 int yyerror(const char*);
 
-int dim(long type) {
-	return 4; // TODO
-}
-
 void enterFunction(long type, char* name) {
 	funcArgs = malloc(50);
 	funcArgs[0] = 0;
-	IDnew(type+20, name, funcArgs);
+	int typeTest = IDfind(name, (void*)IDtest);
+	// If function is FORWARD or new
+	if(typeTest == -1)
+		IDnew(type, name, funcArgs);
+	else if (typeTest > 40 && typeTest-20 == type) {
+		// wait for parameters to verify
+	} else yyerror("name already used");
+
 	IDpush(); 
 }
 
-void declareFunction(void* name) {
+void defineFunction(long type, char* name) {
+	long* args;
+	int typeTest = IDfind(name, (void**)&args);
+	if (typeTest > 40 && typeTest-20 == type){
+		int err = 0;
+		for(int i = 1; i <= funcArgs[0] && i <= args[0]; i++) {
+			if (funcArgs[i] != args[i]) err++;
+		}	
+		if (err || funcArgs[0] != args[0])
+			yyerror("invalid function definition");
+		else {
+			// define a FORWARD function makes it PUBLIC
+			free(funcArgs);
+			IDreplace(type-10, name, args);
+		}
+	}
 	IDpop();
 }
 
@@ -296,8 +316,9 @@ int verifyAssign(Node* lvNode, Node* valNode) {
 	printf("==== %d, %d  =====\n",lvInfo, valInfo);
 	if (lvInfo >= INFO_CONST_ARRAY && lvInfo < 20)
 		yyerror("can't make assignment to constant");
-	/* type := type or type := const_type or any := 0 or string[index] := char */
-	if (!(lvInfo == valInfo || lvInfo + 10 == valInfo || valNode->value.i == 0
+	/* type := type or type := const_type or string[index] := char */
+	if (!(lvInfo == valInfo || lvInfo + 10 == valInfo
+		|| (valNode->value.i == 0 && valNode->attrib == INTEGER)
 		|| (lvInfo%10 == INFO_STR && valInfo == INFO_CHAR_LIT))) 
 		yyerror("invalid assignment");
 	return lvInfo;
@@ -360,7 +381,6 @@ int verifyArgs(char* name, Node* argsNode){
 		while(argsNode->attrib != NIL && i > 0) {
 			Node* argNode = LEFT_CHILD(argsNode);
 			int defType = defArgs[i];
-			printf("!!! %d !!!!\n", argNode->info);
 			if(argNode->info%10 != defType) {
 				char* format = "\"%s\": invalid argument type";
 				formatedErrorMsg(format, name);
@@ -376,11 +396,19 @@ int verifyArgs(char* name, Node* argsNode){
 	return type%10;
 }
 
-int strOrArrayIndex(Node* lvNode, Node* exprNode) {
-	int type = IDfind(lvNode->value.s, 0);
-	
-	if(type < 0) yyerror("couldn't find identifier");
+int verifyLVName(char* name) {
+	long* args; 
+	int type = IDfind(name, (void**)&args);
+	if(type < 0) 
+		yyerror("couldn't find identifier");
 
+	if(type >= INFO_FUNC_ARRAY && args[0] > 0) 
+		yyerror("function requires arguments");
+	return type;
+}
+
+int strOrArrayIndex(Node* lvNode, Node* exprNode) {
+	int type = lvNode->info;
 	if(type != INFO_ARRAY && type != INFO_CONST_ARRAY
 		&& type != INFO_STR && type != INFO_CONST_STR)
 		yyerror("the left value needs to be an array or a string");
@@ -403,6 +431,12 @@ char* getArrayName(Node* node) {
 
 int castCharToInt(Node* n) {
 	return n->info == INFO_CHAR_LIT ? INFO_INT : n->info;
+}
+
+void alocExpr(Node* n1, Node* n2) {
+	if((n1->info != INFO_ARRAY && n1->info != INFO_STR)
+		|| n2->info%10 != INFO_INT)
+		yyerror("can only allocate for strings and arrays");
 }
 
 void nonVoidExpr(Node* n) {
