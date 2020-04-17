@@ -52,7 +52,10 @@ void enterFunction(long type, char* name);
 %token <i> INTEGER CHAR
 %token <s> IDENT TEXTSTRING
 %token MODULE PROGRAM START END VOID CONST NUMBER ARRAY STRING FUNCTION ALOC 
-%token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN NIL
+%token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN 
+
+// AST Tokens
+%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS LVALUE DECLS ARGS VAR
 
 %nonassoc IF
 %nonassoc ELSE
@@ -69,16 +72,16 @@ void enterFunction(long type, char* name);
 
 %type <n> file program module decl opt_initializer const_initializer decls
 %type <n> function public var params args intOrChar vars lvalue type body array_init
-%type <n> stmt return stmts elifs string str_init str_continuation
-%type <n> str_symbol expr array_assign number_assign string_assign array_size end
+%type <n> stmt return end stmts elifs string str_init str_continuation
+%type <n> str_symbol expr array_assign number_assign string_assign array_size
 
 %%
 
 start	: file		{  if(!yynerrs) printNode($1, 0, (char**)yyname); }
       	;
 
-file	: program 	{ $$ = uniNode('f', $1); }
-	| module 	{ $$ = uniNode('f', $1); } 
+file	: program 	{ $$ = uniNode(START_FILE, $1); }
+	| module 	{ $$ = uniNode(START_FILE, $1); } 
       	;
 
 program	: PROGRAM decls START { IDpush(); currRetType = INFO_INT; } body END { $$ = binNode(PROGRAM, $2, $5); IDpop(); }
@@ -87,7 +90,7 @@ program	: PROGRAM decls START { IDpush(); currRetType = INFO_INT; } body END { $
 module	: MODULE decls END { $$ = uniNode(MODULE, $2); }
 	;
 
-decl	: function	{ $$ = $1; }
+decl	: function
 	| public opt_initializer { $$ = binNode(ASSIGN, $1, $2); } 
 	| FORWARD CONST var { $$ = uniNode(CONST, $3); int type = LEFT_CHILD($3)->value.i+10; IDnew(type, RIGHT_CHILD($3)->value.s, 0); }
 	| FORWARD var	{ $$ = uniNode(FORWARD, $2); int type = LEFT_CHILD($2)->value.i; IDnew(type, RIGHT_CHILD($2)->value.s, 0); }
@@ -95,7 +98,7 @@ decl	: function	{ $$ = $1; }
 	;
 
 decls 	:		{ $$ = nilNode(NIL); }
-      	| decl 		{ $$ = uniNode(';', $1); }
+      	| decl
        	| decls ';' decl { $$ = binNode(';', $1, $3); }
 	;
 
@@ -132,34 +135,26 @@ const_initializer
 	;
 
 function: FUNCTION FORWARD type IDENT { enterFunction($3->value.i+40, $4); } params DONE { $$ = uniNode(FUNCTION, binNode(';', binNode(';', nilNode(FORWARD), $3), binNode('(', strNode(IDENT, $4), $6))); IDpop(); }
-       	| FUNCTION public type IDENT { enterFunction($3->value.i+20+$2->info, $4); currRetType = $3->value.i;} params DO body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode('{', $8 ,$9)); defineFunction($3->value.i+20+$2->info, $4); }
+       	| FUNCTION public type IDENT { enterFunction($3->value.i+20+$2->info, $4); currRetType = $3->value.i;} params DO body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode(BODY, $8 ,$9)); defineFunction($3->value.i+20+$2->info, $4); }
 	;
 
-var	: NUMBER IDENT	{ $$ = binNode(NUMBER, intNode('t', INFO_INT), strNode(NUMBER, $2)); }
-    	| STRING IDENT	{ $$ =  binNode(STRING, intNode('t', INFO_STR), strNode(STRING, $2)); }
-	| ARRAY IDENT	{ $$ =  binNode(ARRAY, intNode('t', INFO_ARRAY), strNode(ARRAY, $2)); }
-    	| ARRAY IDENT '[' INTEGER ']' { $$ = binNode(ARRAY, intNode('t', INFO_ARRAY), binNode('[', intNode(INTEGER, $4), strNode(STRING, $2))); if($4 <= 0) yyerror("invalid array dimension"); }
+var	: NUMBER IDENT	{ $$ = binNode(NUMBER, intNode(TYPE, INFO_INT), strNode(NUMBER, $2)); }
+    	| STRING IDENT	{ $$ =  binNode(STRING, intNode(TYPE, INFO_STR), strNode(STRING, $2)); }
+	| ARRAY IDENT	{ $$ =  binNode(ARRAY, intNode(TYPE, INFO_ARRAY), strNode(ARRAY, $2)); }
+    	| ARRAY IDENT '[' INTEGER ']' { $$ = binNode(ARRAY, intNode(TYPE, INFO_ARRAY), binNode('[', intNode(INTEGER, $4), strNode(STRING, $2))); if($4 <= 0) yyerror("invalid array dimension"); }
 	;
 
 params	:		{ $$ = nilNode(NIL); }
-	| var		{ $$ = uniNode(';', $1); 
-				int type = LEFT_CHILD($1)->value.i;
-				IDnew(type, getArrayName(RIGHT_CHILD($1)), 0); 
-				funcArgs[++funcArgs[0]] = type;
-			}
-     	| params ';' var { $$ = binNode(';', $1, $3); 
-				int type = LEFT_CHILD($3)->value.i; 
-				IDnew(type, getArrayName(RIGHT_CHILD($3)), 0); 
-				funcArgs[++funcArgs[0]] = type;
-			}
+	| var		{ functionParams($1); }
+     	| params ';' var { $$ = binNode(';', $1, $3); functionParams($3); }
 	;
 
-args	: expr		{ $$ = binNode(',', $1, nilNode(NIL)); }
-     	| args ',' expr	{ $$ = binNode(',', $3, $1); }
+args	: expr		{ $$ = binNode(ARGS, $1, nilNode(NIL)); }
+     	| args ',' expr	{ $$ = binNode(ARGS, $3, $1); }
 	;
 
-vars 	: var ';'	{ $$ = uniNode(';', $1); int type = LEFT_CHILD($1)->value.i; IDnew(type, getArrayName(RIGHT_CHILD($1)), 0); }
-	| vars var ';'	{ $$ = binNode(';', $1, $2); 
+vars 	: var ';'	{ $$ = uniNode(VAR, $1); int type = LEFT_CHILD($1)->value.i; IDnew(type, getArrayName(RIGHT_CHILD($1)), 0); }
+	| vars var ';'	{ $$ = binNode(VAR, $1, $2); 
 				int type = LEFT_CHILD($2)->value.i;
 				IDnew(type, getArrayName(RIGHT_CHILD($2)), 0); 
 	 }
@@ -179,8 +174,8 @@ public  : 		{ $$ = nilNode(NIL); $$->info = 0;}
 	| PUBLIC 	{ $$ = nilNode(PUBLIC); $$->info = 10; }
 	;
 
-body	: vars stmts 	{ $$ = binNode('{', $1, $2); }
-	| stmts     	{ $$ = uniNode('{', $1); }  
+body	: vars stmts 	{ $$ = binNode(BODY, $1, $2); }
+	| stmts     	{ $$ = uniNode(BODY, $1); }  
 	;
 				
 array_init
@@ -193,32 +188,32 @@ intOrChar
 	| CHAR		{ $$ = intNode(NUMBER, $1); }
 	;
 
-stmt  : IF expr THEN stmts end elifs FI { $$ = binNode(IF, $2, binNode('{', binNode('{', $4, $5), uniNode(ELIF, $6))); nonVoidExpr($2); }
-	| IF expr THEN stmts end elifs ELSE stmts end FI { $$ = binNode(ELSE, binNode(',', binNode(IF, $2, binNode('{', $4, $5)), uniNode(ELIF, $6)), binNode('{', $8, $9)); nonVoidExpr($2);}  
-	| FOR expr UNTIL expr STEP expr DO {loopLvl++;} stmts end DONE { $$ = binNode(FOR, binNode(',', binNode(',', $2, $4), $6), binNode('{', $9, $10)); nonVoidExpr($2); nonVoidExpr($4);nonVoidExpr($6);} 
+stmt  : IF expr THEN stmts end elifs FI { $$ = binNode(IF, $2, binNode(STMTS, binNode(STMTS, $4, $5), uniNode(ELIF, $6))); nonVoidExpr($2); }
+	| IF expr THEN stmts end elifs ELSE stmts end FI { $$ = binNode(ELSE, binNode(',', binNode(IF, $2, binNode('b', $4, $5)), uniNode(ELIF, $6)), binNode('{', $8, $9)); nonVoidExpr($2);}  
+	| FOR expr UNTIL expr STEP expr DO {loopLvl++;} stmts end DONE { $$ = binNode(FOR, binNode(',', binNode(',', $2, $4), $6), binNode(STMTS, $9, $10)); nonVoidExpr($2); nonVoidExpr($4);nonVoidExpr($6);} 
 	| expr ';'	{ $$ = $1; }
 	| expr '!'	{ $$ = uniNode('!', $1); printExpr($1); }
-	| lvalue ALOC  expr ';' { $$ = binNode('#', $1, $3); alocExpr($1, $3); }
+	| lvalue ALOC  expr ';' { $$ = binNode(ALOC, $1, $3); alocExpr($1, $3); }
 	| error ';'
 	;
 
-end	: return	{ $$ = $1; }
+end	: return
 	| REPEAT	{ $$ = nilNode(REPEAT); if(!loopLvl) yyerror("invalid repeat statement"); }
 	| STOP		{ $$ = nilNode(STOP); if(!loopLvl) yyerror("invalid stop statement");}
 	;
 
-return	:		{ $$ = nilNode(RETURN); }
+return	:		{ $$ = nilNode(NIL); }
       	| RETURN	{ $$ = nilNode(RETURN); if(!IDlevel() || currRetType != INFO_VOID) yyerror("invalid return statement");}
        	| RETURN expr	{ $$ = uniNode(RETURN, $2); if(!IDlevel() || currRetType != $2->info%10 || currRetType%10 == INFO_VOID) yyerror("invalid return statement");}
 	;
 
 stmts
 	:		{ $$ = nilNode(NIL); }
-	| stmts stmt	{ $$ = binNode('.', $1, $2); }
+	| stmts stmt	{ $$ = binNode(STMTS, $1, $2); }
 	;
 
 elifs	:		{ $$ = nilNode(NIL); }
-	| ELIF expr THEN stmts end elifs { $$ = binNode(ELIF, $2, binNode('{', binNode('{', $4, $5), $6)); nonVoidExpr($2);}
+	| ELIF expr THEN stmts end elifs { $$ = binNode(ELIF, $2, binNode(STMTS, binNode(STMTS, $4, $5), $6)); nonVoidExpr($2);}
 	;
 
 string	: TEXTSTRING 	{ $$ = strNode(STRING, $1); }
@@ -226,19 +221,19 @@ string	: TEXTSTRING 	{ $$ = strNode(STRING, $1); }
 	;
 
 str_continuation
-	:		{ $$ = nilNode(STRING); }
-	| str_continuation str_symbol { $$ = binNode(STRING, $1, $2); }
+	:		{ $$ = nilNode(NIL); }
+	| str_continuation str_symbol { $$ = binNode(STRING_ELEM, $1, $2); }
 	; 
 
-str_init: str_symbol str_symbol	{ $$ = binNode(STRING, $1, $2); }
+str_init: str_symbol str_symbol	{ $$ = binNode(STRING_ELEM, $1, $2); }
 	;
 
 str_symbol
-	: intOrChar	{ $$ = $1; }
+	: intOrChar
 	| TEXTSTRING	{ $$ = strNode(STRING, $1); }
 	;
 
-expr	: lvalue 	{ $$ = uniNode('*', $1); $$->info = $1->info; }
+expr	: lvalue 	{ $$ = uniNode(LVALUE, $1); $$->info = $1->info; }
      	| lvalue ASSIGN expr { $$ = binNode(ASSIGN, $1, $3); $$->info = verifyAssign($1, $3); }
 	| INTEGER 	{ $$ = intNode(INTEGER, $1); $$->info = INFO_INT; }
 	| string 	{ $$ = $1; $$->info = INFO_STR; }
@@ -307,6 +302,11 @@ void defineFunction(long type, char* name) {
 	IDpop();
 }
 
+void functionParams(Node* n) {
+	int type = LEFT_CHILD(n)->value.i;
+	IDnew(type, getArrayName(RIGHT_CHILD(n)), 0); 
+	funcArgs[++funcArgs[0]] = type;
+}
 
 int verifyAssign(Node* lvNode, Node* valNode) {
 	valNode->info = castCharToInt(valNode);
