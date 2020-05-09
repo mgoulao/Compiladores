@@ -8,21 +8,21 @@ char errmsg[80];
 char* dupstr(const char *s);
 extern void yyerror(const char *msg);
 void reservedWordError(char* word);
-int hasStarted = 0, charRead = 0;
+int hasStarted = 0, charRead = 0, strSize = 0;
 %} 
 
 D [0-9]
 H [a-fA-F0-9]
 O [0-7]
-B [0-1]
+B [01]
 CHAR_HEX \\[0-9A-Fa-f][0-9A-Fa-f]?
 
 %x IGN COM CT CI CC FIN
 
-%% 
+%%
 	if (!hasStarted) BEGIN IGN;
 
-<FIN>.|\n		;
+<FIN>.|\n		return 0;
 
 <IGN>^"program"		hasStarted = 1; BEGIN INITIAL; return PROGRAM;
 <IGN>^"module"		hasStarted = 1; BEGIN INITIAL; return MODULE;
@@ -80,8 +80,8 @@ CHAR_HEX \\[0-9A-Fa-f][0-9A-Fa-f]?
 <CI>{CHAR_HEX}        { yylval.i = strtol(yytext+1, 0,16); charRead++; }
 <CI>[^']		{yylval.i = (int) yytext[0]; charRead++;}
 
-\"([^*"]|\*.)*\"	yylval.s = malloc(yyleng); *yylval.s = 0; REJECT;
-\"			BEGIN CT;
+\"([^"\\]|\\.)*\"	strSize = yyleng; REJECT;
+\"			if(strSize) { BEGIN CT;yylval.s = malloc(strSize); }
 <CT>\"			BEGIN INITIAL; return TEXTSTRING;
 <CT>\\\"		strcat(yylval.s, "\"");
 <CT>\\\\		strcat(yylval.s, "\\");
@@ -90,7 +90,7 @@ CHAR_HEX \\[0-9A-Fa-f][0-9A-Fa-f]?
 <CT>\\t			strcat(yylval.s, "\t");
 <CT>{CHAR_HEX}	{ char s[2]; s[1] = 0; s[0] = strtol(yytext+1,0,16); strcat(yylval.s, s); }
 <CT>\\.			yyerror("invalid escape sequence in string");
-<CT>[^"]		strcat(yylval.s, yytext);
+<CT>.|\n		strcat(yylval.s, yytext);
 
 0{O}+                   { errno = 0; int val = strtol(yytext+1, 0, 8); if(errno == ERANGE || val < 0) yyerror("number overflow"); yylval.i = val; return INTEGER; }
 {D}+			{ errno = 0; int val = strtol(yytext, 0, 10); if(errno == ERANGE || val < 0) yyerror("number overflow"); yylval.i = val; return INTEGER; } 

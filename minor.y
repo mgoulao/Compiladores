@@ -55,15 +55,17 @@ void enterFunction(long type, char* name);
 %token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN 
 
 // AST Tokens
-%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS LVALUE DECLS ARGS VAR
+%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS LVALUE DECLS ARGS VAR INTS
 
 %nonassoc IF
 %nonassoc ELSE
 %left ELIF
 %right ASSIGN
-%left GE LE '=' NE '<' '>'
-%nonassoc '~' '&' '?'
 %left '|'
+%left '&'
+%nonassoc '~' '?'
+%left '=' NE
+%left GE LE '<' '>'
 %left '+' '-'
 %left '*' '/' '%'
 %right POW
@@ -77,7 +79,7 @@ void enterFunction(long type, char* name);
 
 %%
 
-start	: file		{  if(!yynerrs) printNode($1, 0, (char**)yyname); }
+start	: file		{ if(!yynerrs) printNode($1, 0, (char**)yyname); }
       	;
 
 file	: program 	{ $$ = uniNode(START_FILE, $1); }
@@ -103,7 +105,7 @@ decls 	:		{ $$ = nilNode(NIL); }
 	;
 
 opt_initializer
-	: ARRAY IDENT array_size array_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), binNode('[', $3, $4)); IDnew(INFO_ARRAY, $2, 0); }
+	: ARRAY IDENT array_size array_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), binNode('[', $3, $4)); IDnew(INFO_ARRAY, $2, 0); arrayAssign($3, $4); }
         | NUMBER IDENT number_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); IDnew(INFO_INT, $2, 0); }
         | STRING IDENT string_assign { $$ = binNode(ASSIGN, strNode(IDENT, $2), $3); IDnew(INFO_STR, $2, 0); }
 	;
@@ -180,7 +182,9 @@ body	: vars stmts 	{ $$ = binNode(BODY, $1, $2); }
 				
 array_init
 	: INTEGER	{ $$ = intNode(INTEGER, $1); }
-	| array_init ',' INTEGER { $$ = binNode(',', $1, intNode(INTEGER, $3)); }
+	| '-' INTEGER	{ $$ = intNode(INTEGER, -$2); }
+	| array_init ','  INTEGER { $$ = binNode(INTS, $1, intNode(INTEGER, $3)); }
+	| array_init ',' '-' INTEGER { $$ = binNode(INTS, $1, intNode(INTEGER, -$4)); }
 	;
 
 intOrChar
@@ -191,7 +195,7 @@ intOrChar
 stmt  : IF expr THEN stmts end elifs FI { $$ = binNode(IF, $2, binNode(STMTS, binNode(STMTS, $4, $5), uniNode(ELIF, $6))); nonVoidExpr($2); }
 	| IF expr THEN stmts end elifs ELSE stmts end FI { $$ = binNode(ELSE, binNode(',', binNode(IF, $2, binNode('b', $4, $5)), uniNode(ELIF, $6)), binNode('{', $8, $9)); nonVoidExpr($2);}  
 	| FOR expr UNTIL expr STEP expr DO {loopLvl++;} stmts end DONE { $$ = binNode(FOR, binNode(',', binNode(',', $2, $4), $6), binNode(STMTS, $9, $10)); nonVoidExpr($2); nonVoidExpr($4);nonVoidExpr($6);} 
-	| expr ';'	{ $$ = $1; }
+	| expr ';'
 	| expr '!'	{ $$ = uniNode('!', $1); printExpr($1); }
 	| lvalue ALOC  expr ';' { $$ = binNode(ALOC, $1, $3); alocExpr($1, $3); }
 	| error ';'
@@ -236,7 +240,7 @@ str_symbol
 expr	: lvalue 	{ $$ = uniNode(LVALUE, $1); $$->info = $1->info; }
      	| lvalue ASSIGN expr { $$ = binNode(ASSIGN, $1, $3); $$->info = verifyAssign($1, $3); }
 	| INTEGER 	{ $$ = intNode(INTEGER, $1); $$->info = INFO_INT; }
-	| string 	{ $$ = $1; $$->info = INFO_STR; }
+	| string 	{ $$->info = INFO_STR; }
 	| CHAR	 	{ $$ = intNode(CHAR, $1); $$->info = INFO_CHAR_LIT; }
 	| '-' expr %prec UMINUS { $$ = uniNode('-', $2); $$->info = intOnly($2);}
 	| '?'	 	{ $$ = nilNode('?'); $$->info = INFO_INT; }
@@ -313,10 +317,9 @@ int verifyAssign(Node* lvNode, Node* valNode) {
 	int lvInfo = lvNode->info,
 	valInfo = valNode->info;
 	/* lvalue is a constant  */
-	printf("==== %d, %d  =====\n",lvInfo, valInfo);
 	if (lvInfo >= INFO_CONST_ARRAY && lvInfo < 20)
 		yyerror("can't make assignment to constant");
-	/* type := type or type := const_type or string[index] := char */
+	/* type := type or type := const_type or string[index] := char  special zero */
 	if (!(lvInfo == valInfo || lvInfo + 10 == valInfo
 		|| (valNode->value.i == 0 && valNode->attrib == INTEGER)
 		|| (lvInfo%10 == INFO_STR && valInfo == INFO_CHAR_LIT))) 
@@ -340,7 +343,6 @@ int intExpr(Node* n1, Node* n2) {
 }
 
 int intArrayExpr(Node* n1, Node* n2) {
-	printf("OPERATORs -/+: %d , %d\n ",n1->info, n2->info);
 	n1->info = castCharToInt(n1);
 	n2->info = castCharToInt(n2);
 	if(!(n1->info%10 >= INFO_ARRAY && n1->info%10 <= INFO_INT
@@ -382,8 +384,16 @@ int verifyArgs(char* name, Node* argsNode){
 			Node* argNode = LEFT_CHILD(argsNode);
 			int defType = defArgs[i];
 			if(argNode->info%10 != defType) {
-				char* format = "\"%s\": invalid argument type";
-				formatedErrorMsg(format, name);
+				if (defType == INFO_STR || defType == INFO_ARRAY) {
+				printf("%d, %d\n", argNode->info, defType);
+					if(!(argNode->info == INFO_INT && argNode->value.i == 0)) {
+						char* format = "\"%s\":invalid argument type";
+						formatedErrorMsg(format, name);
+					}
+				} else {
+					char* format = "\"%s\":invalid argument type";
+					formatedErrorMsg(format, name);
+				}
 			}
 			i--;
 			argsNode = RIGHT_CHILD(argsNode);
@@ -448,3 +458,16 @@ void formatedErrorMsg(char* format, char* msg) {
 	yyerror(errmsg);
 }
 
+static void arrayAssign(Node* dimNode, Node* initNode) {
+	if (!dimNode->value.i) return; // size not specified
+	if (initNode->attrib == NIL) return;
+	Node* currNode = initNode->SUB(0);
+	int counter = 0, dim = dimNode->value.i;
+	
+	for (counter = 1; currNode->attrib == INTS; counter++) {
+		currNode = currNode->SUB(0);
+	}
+	if(counter > dim) {
+		yyerror("to many initializers for array");
+	}
+}
