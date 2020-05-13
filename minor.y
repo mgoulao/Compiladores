@@ -24,11 +24,17 @@ char errmsg[80];
 static long* funcArgs;
 static int loopLvl = 0, funcLvl = 0, currRetType = 1; 
 
+void publicVariable(char*, Node*, int, Node*, Node*);
+void forwardVariable(char*, int, Node*, Node*);
+void variable(char*, int, Node*, Node*);
+void function(char*, int, Node*)
+void externs();
+
+
 int dim(long type);
 int verifyAssign(Node* lvNode, Node* valNode);
 int intOnly(Node* n);
 int intExpr(Node* n1, Node* n2);
-int strIntExpr(Node* n1, Node*n2);
 int intArrayExpr(Node* n1, Node* n2);
 int strIntExpr(Node* n1, Node* n2);
 void printExpr(Node* n);
@@ -55,7 +61,7 @@ void enterFunction(long type, char* name);
 %token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN 
 
 // AST Tokens
-%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS LVALUE DECLS ARGS VAR INTS
+%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS LVALUE DECLS ARGS VAR INTS INDEX FOR_EXPRS IF_ELIFS RETURN_VOI RETURN_VOID
 
 %nonassoc IF
 %nonassoc ELSE
@@ -101,7 +107,7 @@ decl	: function
 
 decls 	:		{ $$ = nilNode(NIL); }
       	| decl
-       	| decls ';' decl { $$ = binNode(';', $1, $3); }
+       	| decls ';' decl { $$ = binNode(DECLS, $1, $3); }
 	;
 
 opt_initializer
@@ -163,7 +169,7 @@ vars 	: var ';'	{ $$ = uniNode(VAR, $1); int type = LEFT_CHILD($1)->value.i; IDn
 	;
 
 lvalue	: IDENT		{ $$ = strNode(IDENT, $1); $$->info = verifyLVName($1);  }
-       	| lvalue '[' expr ']' { $$ = binNode(IDENT, $1, $3); $$->info = strOrArrayIndex($1, $3); }
+       	| lvalue '[' expr ']' { $$ = binNode(INDEX, $1, $3); $$->info = strOrArrayIndex($1, $3); }
 	; 
 
 type	: NUMBER	{ $$ = intNode(NUMBER, INFO_INT); } 
@@ -193,8 +199,8 @@ intOrChar
 	;
 
 stmt  : IF expr THEN stmts end elifs FI { $$ = binNode(IF, $2, binNode(STMTS, binNode(STMTS, $4, $5), uniNode(ELIF, $6))); nonVoidExpr($2); }
-	| IF expr THEN stmts end elifs ELSE stmts end FI { $$ = binNode(ELSE, binNode(',', binNode(IF, $2, binNode('b', $4, $5)), uniNode(ELIF, $6)), binNode('{', $8, $9)); nonVoidExpr($2);}  
-	| FOR expr UNTIL expr STEP expr DO {loopLvl++;} stmts end DONE { $$ = binNode(FOR, binNode(',', binNode(',', $2, $4), $6), binNode(STMTS, $9, $10)); nonVoidExpr($2); nonVoidExpr($4);nonVoidExpr($6);} 
+	| IF expr THEN stmts end elifs ELSE stmts end FI { $$ = binNode(ELSE, binNode(IF_ELIFS, binNode(IF, $2, binNode(STMTS, $4, $5)), $6), binNode(STMTS, $8, $9)); nonVoidExpr($2);}  
+	| FOR expr UNTIL expr STEP expr DO {loopLvl++;} stmts end DONE { $$ = binNode(FOR, binNode(FOR_EXPRS, binNode(FOR_EXPRS, $2, $4), $6), binNode(STMTS, $9, $10)); nonVoidExpr($2); nonVoidExpr($4);nonVoidExpr($6);} 
 	| expr ';'
 	| expr '!'	{ $$ = uniNode('!', $1); printExpr($1); }
 	| lvalue ALOC  expr ';' { $$ = binNode(ALOC, $1, $3); alocExpr($1, $3); }
@@ -207,7 +213,7 @@ end	: return
 	;
 
 return	:		{ $$ = nilNode(NIL); }
-      	| RETURN	{ $$ = nilNode(RETURN); if(!IDlevel() || currRetType != INFO_VOID) yyerror("invalid return statement");}
+      	| RETURN	{ $$ = nilNode(RETURN_VOID); if(!IDlevel() || currRetType != INFO_VOID) yyerror("invalid return statement");}
        	| RETURN expr	{ $$ = uniNode(RETURN, $2); if(!IDlevel() || currRetType != $2->info%10 || currRetType%10 == INFO_VOID) yyerror("invalid return statement");}
 	;
 
@@ -302,6 +308,7 @@ void defineFunction(long type, char* name) {
 			free(funcArgs);
 			IDreplace(type-10, name, args);
 		}
+		
 	}
 	IDpop();
 }
@@ -464,7 +471,7 @@ static void arrayAssign(Node* dimNode, Node* initNode) {
 	Node* currNode = initNode->SUB(0);
 	int counter = 0, dim = dimNode->value.i;
 	
-	for (counter = 1; currNode->attrib == INTS; counter++) {
+	for (counter = initNode->attrib != NIL; currNode->attrib == INTS; counter++) {
 		currNode = currNode->SUB(0);
 	}
 	if(counter > dim) {
