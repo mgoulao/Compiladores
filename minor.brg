@@ -37,7 +37,7 @@ static void yytrace(NODEPTR_TYPE p, int eruleno, int cost, int bestcost);
 extern FILE *yyout;
 
 %}
-%term LIST=';' EQ='=' ADD='+' SUB='-' MUL='*' DIV='/' MOD='%' LT='<' GT='>' NOT='~' BOR='|' BAND='&'
+%term LIST=';' EQ='=' ADD='+' SUB='-' MUL='*' DIV='/' MOD='%' LT='<' GT='>' NOT='~' BOR='|' BAND='&' PRINT='!'
 %include "y.tab.h"
 %%
 
@@ -49,25 +49,33 @@ program: PROGRAM(decls, body)	1 {}
 
 body:	BODY(vars, stmts)	1 {}
 
+vars: VAR(var)  1 {}
+vars: VARS(vars, var) 1 {}
+
+stmt: PRINT(expr)	1 {}
+
 decls: 	NIL
 decls:	DECLS(decls, decl)	1 {}
+
+decl: 	FORWARD(var)
+
+var:	INT_TYPE(type, IDENT)
+var:	STR_TYPE(type, IDENT)
+var:	ARR_TYPE(type, IDENT)
+
+type:	NUMBER	1 {}
+type:	STRING 	1 {}
+type:	ARRAY	1 {}
 
 stmts: NIL
 stmts: STMTS(stmts, stmt)	1 {}
 
-end: NIL
-end: return		1 {}
-end: REPEAT		1 { fprintf(yyout, pfJMP, mklbl(contlbl[contcnt])); }
-end: STOP		1 { fprintf(yyout, pfJMP, mklbl(brklbl[brkcnt])); }
 
-return: NIL
-return: RETURN_VOID
-return: RETURN(expr)	1 {}
 
 %! types
 expr:	INTEGER		1 { fprintf(outfp, pfIMM, p->value.i);  }
 expr:	STRING		1 { lbl++; fprintf(outfp, pfRODATA pfALIGN pfLABEL, mklbl(lbl)); outstr(p->value.s); fprintf(outfp, pfTEXT pfADDR, mklbl(lbl));  }
-expr:	CHAR		1 { fprintf(outfp, pfIMM, p->value.i); // TODO  }
+expr:	CHAR		1 { fprintf(outfp, pfIMM, p->value.i); }
 
 %! expressions string and int
 expr:   EQ(expr,expr)   1 { fprintf(yyout, pfEQ); }
@@ -83,7 +91,7 @@ expr:   MUL(expr,expr)  1 { fprintf(yyout, pfMUL); }
 expr:   DIV(expr,expr)  1 { fprintf(yyout, pfDIV); }
 expr:   MOD(expr,expr)  1 { fprintf(yyout, pfMOD); }
 
-expr:	SUB(expr)	1 {}
+expr:	NEG(expr)	1 {}
 
 %! expressions int and array
 expr:   ADD(expr,expr)  1 { fprintf(yyout, pfADD); }
@@ -95,13 +103,13 @@ stmtsAndEnd: STMTS(stmts, end)	1 {   }
 
 
 %! if-elifs-else
-stmt:	ELSE(ifElif, stmtsAndEND)	1 { fprintf(yyout, pfLABEL, mklbl(LEFT_CHILD(p)->place)); }
-if:	IF(cond, stmt)	1 { p->place = ++lbl; fprintf(yyout, pfJMP pfLABEL,
+stmt:	ELSE(ifElif, stmtsAndEnd)	1 { fprintf(yyout, pfLABEL, mklbl(LEFT_CHILD(p)->place)); }
+if:	IF(cond, stmtsAndEnd)	1 { p->place = ++lbl; fprintf(yyout, pfJMP pfLABEL,
 				mklbl(p->place), mklbl(LEFT_CHILD(p)->place)); }
 ifElif:	IF_ELIFS(if, elifs)
 %! if elif
 elifs:	NIL
-elifs:	ELIF(cond, STMTS(stmts, elifs)	1 {}
+elifs:	ELIF(cond, STMTS(stmts, elifs))	1 {}
 
 %! simple if (no else): uses only one label
 stmt:	IF(cond, stmtsAndEnd)	1 { fprintf(yyout, pfLABEL, mklbl(LEFT_CHILD(p)->place)); }
@@ -112,13 +120,19 @@ stmt:	FOR(forExprs, STMTS(stmts, end))	1 { brkcnt--; fprintf(yyout, pfJMP pfLABE
 
 forExprs: FOR_EXPRS(FOR_EXPRS(expr, expr), expr) 1 { }
 
-begin:	START		 1 { p->place = ++lbl; fprintf(yyout, pfLABEL, mklbl(lbl)); }
+end: NIL
+end: return		1 {}
+end: REPEAT		1 { fprintf(yyout, pfJMP, mklbl(contlbl[contcnt])); }
+end: STOP		1 { fprintf(yyout, pfJMP, mklbl(brklbl[brkcnt])); }
 
+return: NIL
+return: RETURN_VOID
+return: RETURN(expr)	1 {}
 
 %! lvalues
-lvalue:	LOCAL		1 { fprintf(yyout, pfLOCAL, p->value.i * (pfWORD/4)); }
-lvalue:	ADDR		1 { fprintf(yyout, pfADDR, p->value.s); }
-lvalue:	LOAD(lvalue)	1 { fprintf(yyout, pfLOAD); }
+%! lvalue:	LOCAL		1 { fprintf(yyout, pfLOCAL, p->value.i * (pfWORD/4)); }
+%! lvalue:	ADDR		1 { fprintf(yyout, pfADDR, p->value.s); }
+%! lvalue:	LOAD(lvalue)	1 { fprintf(yyout, pfLOAD); }
 lvec:	lvalue		1 { fprintf(yyout, pfLOAD); }
 lvalue:	INDEX(lvec, expr) 1 { fprintf(yyout, pfIMM pfMUL pfADD, pfWORD); }
 expr:	LVALUE(lvalue)	1 { fprintf(yyout, pfLOAD); }
@@ -127,11 +141,11 @@ expr:	BAND(lvalue)	1 {   }
 %! assignment (multiple assignment)
 assign: expr		1 { fprintf(yyout, pfDUP); }
 expr:	ASSIGN(assign, lvalue)	1 { fprintf(yyout, pfSTORE); }
-expr:	ASSIGN(expr, LOCAL)	1 { fprintf(yyout, pfDUP pfLOCA, RIGHT_CHILD(p)->value.i * (pfWORD/4)); }
-expr:	ASSIGN(expr, ADDR)	1 { fprintf(yyout, pfDUP pfADDRA, RIGHT_CHILD(p)->value.s); }
-expr:	ADDR		1 { fprintf(yyout, pfADDRV, p->value.s); }
-stmt:	ALLOC(alloc, lvalue)  1 { fprintf(yyout, pfSTORE); }
-alloc:	expr		1 { fprintf(yyout, pfIMM pfMUL pfALLOC pfSP, pfWORD); }
+%! expr:	ASSIGN(expr, LOCAL)	1 { fprintf(yyout, pfDUP pfLOCA, RIGHT_CHILD(p)->value.i * (pfWORD/4)); }
+%! expr:	ASSIGN(expr, ADDR)	1 { fprintf(yyout, pfDUP pfADDRA, RIGHT_CHILD(p)->value.s); }
+%! expr:	ADDR		1 { fprintf(yyout, pfADDRV, p->value.s); }
+stmt:	ALOC(aloc, lvalue)  1 { fprintf(yyout, pfSTORE); }
+aloc:	expr		1 { fprintf(yyout, pfIMM pfMUL pfALLOC pfSP, pfWORD); }
 
 
 

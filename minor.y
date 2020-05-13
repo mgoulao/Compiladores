@@ -61,7 +61,7 @@ void enterFunction(long type, char* name);
 %token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN 
 
 // AST Tokens
-%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS LVALUE DECLS ARGS VAR INTS INDEX FOR_EXPRS IF_ELIFS RETURN_VOI RETURN_VOID
+%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS LVALUE DECLS ARGS VAR VARS INTS INDEX FOR_EXPRS IF_ELIFS RETURN_VOI RETURN_VOID INT_TYPE STR_TYPE ARR_TYPE NEG
 
 %nonassoc IF
 %nonassoc ELSE
@@ -146,9 +146,9 @@ function: FUNCTION FORWARD type IDENT { enterFunction($3->value.i+40, $4); } par
        	| FUNCTION public type IDENT { enterFunction($3->value.i+20+$2->info, $4); currRetType = $3->value.i;} params DO body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode(BODY, $8 ,$9)); defineFunction($3->value.i+20+$2->info, $4); }
 	;
 
-var	: NUMBER IDENT	{ $$ = binNode(NUMBER, intNode(TYPE, INFO_INT), strNode(NUMBER, $2)); }
-    	| STRING IDENT	{ $$ =  binNode(STRING, intNode(TYPE, INFO_STR), strNode(STRING, $2)); }
-	| ARRAY IDENT	{ $$ =  binNode(ARRAY, intNode(TYPE, INFO_ARRAY), strNode(ARRAY, $2)); }
+var	: NUMBER IDENT	{ $$ = binNode(INT_TYPE, intNode(TYPE, INFO_INT), strNode(IDENT, $2)); }
+    	| STRING IDENT	{ $$ =  binNode(STR_TYPE, intNode(TYPE, INFO_STR), strNode(IDENT, $2)); }
+	| ARRAY IDENT	{ $$ =  binNode(ARR_TYPE, intNode(TYPE, INFO_ARRAY), strNode(IDENT, $2)); }
     	| ARRAY IDENT '[' INTEGER ']' { $$ = binNode(ARRAY, intNode(TYPE, INFO_ARRAY), binNode('[', intNode(INTEGER, $4), strNode(STRING, $2))); if($4 <= 0) yyerror("invalid array dimension"); }
 	;
 
@@ -162,7 +162,7 @@ args	: expr		{ $$ = binNode(ARGS, $1, nilNode(NIL)); }
 	;
 
 vars 	: var ';'	{ $$ = uniNode(VAR, $1); int type = LEFT_CHILD($1)->value.i; IDnew(type, getArrayName(RIGHT_CHILD($1)), 0); }
-	| vars var ';'	{ $$ = binNode(VAR, $1, $2); 
+	| vars var ';'	{ $$ = binNode(VARS, $1, $2); 
 				int type = LEFT_CHILD($2)->value.i;
 				IDnew(type, getArrayName(RIGHT_CHILD($2)), 0); 
 	 }
@@ -248,7 +248,7 @@ expr	: lvalue 	{ $$ = uniNode(LVALUE, $1); $$->info = $1->info; }
 	| INTEGER 	{ $$ = intNode(INTEGER, $1); $$->info = INFO_INT; }
 	| string 	{ $$->info = INFO_STR; }
 	| CHAR	 	{ $$ = intNode(CHAR, $1); $$->info = INFO_CHAR_LIT; }
-	| '-' expr %prec UMINUS { $$ = uniNode('-', $2); $$->info = intOnly($2);}
+	| '-' expr %prec UMINUS { $$ = uniNode(NEG, $2); $$->info = intOnly($2);}
 	| '?'	 	{ $$ = nilNode('?'); $$->info = INFO_INT; }
 	| '&' lvalue %prec UMINUS { $$ = uniNode('&', $2); $$->info = intOnly($2); }
 	| '~' expr	{ $$ = uniNode('~', $2); $$->info = intOnly($2);}
