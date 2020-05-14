@@ -4,6 +4,7 @@
 #include <string.h>
 #include "node.h"
 #include "tabid.h"
+#include "postfix.h"
 
 extern int yylex();
 
@@ -24,11 +25,12 @@ char errmsg[80];
 static long* funcArgs;
 static int loopLvl = 0, funcLvl = 0, currRetType = 1; 
 
-void publicVariable(char*, Node*, int, Node*, Node*);
-void forwardVariable(char*, int, Node*, Node*);
-void variable(char*, int, Node*, Node*);
-void function(char*, int, Node*)
+void publicVariable(char* name, Node* public, int isConst, Node* vectorSize, Node* init);
+void forwardVariable(char* name, int isConst, Node* vector, Node* init);
+void variable(char* name, int isConst, Node* vectorSize, Node* init);
+void function(char*, int enter, Node* stmt);
 void externs();
+void evaluate();
 
 
 int dim(long type);
@@ -61,7 +63,7 @@ void enterFunction(long type, char* name);
 %token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN 
 
 // AST Tokens
-%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS LVALUE DECLS ARGS VAR VARS INTS INDEX FOR_EXPRS IF_ELIFS RETURN_VOI RETURN_VOID INT_TYPE STR_TYPE ARR_TYPE NEG
+%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS LVALUE DECLS ARGS VAR VARS INTS INDEX FOR_EXPRS IF_ELIFS RETURN_VOI RETURN_VOID INT_TYPE STR_TYPE ARR_TYPE NEG PRINT
 
 %nonassoc IF
 %nonassoc ELSE
@@ -85,7 +87,7 @@ void enterFunction(long type, char* name);
 
 %%
 
-start	: file		{ if(!yynerrs) printNode($1, 0, (char**)yyname); }
+start	: file		{ if(!yynerrs){printNode($1, 0, (char**)yyname); evaluate($1); } }
       	;
 
 file	: program 	{ $$ = uniNode(START_FILE, $1); }
@@ -183,7 +185,7 @@ public  : 		{ $$ = nilNode(NIL); $$->info = 0;}
 	;
 
 body	: vars stmts 	{ $$ = binNode(BODY, $1, $2); }
-	| stmts     	{ $$ = uniNode(BODY, $1); }  
+	| stmts     	{ $$ = binNode(BODY, nilNode(NIL), $1); }  
 	;
 				
 array_init
@@ -202,7 +204,7 @@ stmt  : IF expr THEN stmts end elifs FI { $$ = binNode(IF, $2, binNode(STMTS, bi
 	| IF expr THEN stmts end elifs ELSE stmts end FI { $$ = binNode(ELSE, binNode(IF_ELIFS, binNode(IF, $2, binNode(STMTS, $4, $5)), $6), binNode(STMTS, $8, $9)); nonVoidExpr($2);}  
 	| FOR expr UNTIL expr STEP expr DO {loopLvl++;} stmts end DONE { $$ = binNode(FOR, binNode(FOR_EXPRS, binNode(FOR_EXPRS, $2, $4), $6), binNode(STMTS, $9, $10)); nonVoidExpr($2); nonVoidExpr($4);nonVoidExpr($6);} 
 	| expr ';'
-	| expr '!'	{ $$ = uniNode('!', $1); printExpr($1); }
+	| expr '!'	{ $$ = uniNode(PRINT, $1); printExpr($1); }
 	| lvalue ALOC  expr ';' { $$ = binNode(ALOC, $1, $3); alocExpr($1, $3); }
 	| error ';'
 	;

@@ -1,9 +1,9 @@
 LANG=minor
-EXT=min # file extension: .$(EXT)
-LIB=lib # compiler library directory
-UTIL=util # compiler library: lib$(LIB).a
-RUN=run # runtime directory
-EXS=exs # examples directory
+EXT=min# file extension: .$(EXT)
+LIB=lib# compiler library directory
+UTIL=util# compiler library: lib$(LIB).a
+RUN=run# runtime directory
+EXS=exs# examples directory
 CC=gcc
 CFLAGS=-g -DYYDEBUG
 LDLIBS=run/lib$(LANG).a
@@ -12,7 +12,7 @@ LD=ld -m elf_i386
 
 .SUFFIXES: .asm $(EXT)
 
-$(LANG): $(LANG).y $(LANG).l 
+$(LANG): $(LANG).y $(LANG).l $(LANG).brg 
 	make -C $(LIB)
 	byacc -dv $(LANG).y
 	flex -dl $(LANG).l
