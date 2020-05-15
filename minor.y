@@ -28,7 +28,9 @@ static int loopLvl = 0, funcLvl = 0, currRetType = 1;
 void publicVariable(char* name, Node* public, int isConst, Node* vectorSize, Node* init);
 void forwardVariable(char* name, int isConst, Node* vector, Node* init);
 void variable(char* name, int isConst, Node* vectorSize, Node* init);
-void function(char*, int enter, Node* stmt);
+void forwardFunction(char* name);
+void burgFunction(char* name, int enter, Node* public, Node* type, Node* stmt);
+void mainFunction(Node* body);
 void externs();
 void evaluate();
 
@@ -49,6 +51,8 @@ int castCharToInt(Node* n);
 void nonVoidExpr(Node* n);
 void alocExpr(Node* n1, Node* n2);
 void enterFunction(long type, char* name); 
+void function(char* name, int forward, Node* public,Node* type, Node* body);
+void defineFunction(long type, char* name);
 %}
 
 %union {
@@ -63,7 +67,7 @@ void enterFunction(long type, char* name);
 %token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN 
 
 // AST Tokens
-%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS LVALUE DECLS ARGS VAR VARS INTS INDEX FOR_EXPRS IF_ELIFS RETURN_VOI RETURN_VOID INT_TYPE STR_TYPE ARR_TYPE NEG PRINT
+%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS DECLS ARGS VAR VARS INTS INDEX FOR_EXPRS IF_ELIFS INT_TYPE STR_TYPE ARR_TYPE NEG PRINT ADDR FBODY
 
 %nonassoc IF
 %nonassoc ELSE
@@ -87,14 +91,14 @@ void enterFunction(long type, char* name);
 
 %%
 
-start	: file		{ if(!yynerrs){printNode($1, 0, (char**)yyname); evaluate($1); } }
+start	: file		{ if(!yynerrs){externs(); } }
       	;
 
 file	: program 	{ $$ = uniNode(START_FILE, $1); }
 	| module 	{ $$ = uniNode(START_FILE, $1); } 
       	;
 
-program	: PROGRAM decls START { IDpush(); currRetType = INFO_INT; } body END { $$ = binNode(PROGRAM, $2, $5); IDpop(); }
+program	: PROGRAM decls START { IDpush(); currRetType = INFO_INT; } body END { $$ = binNode(PROGRAM, $2, $5); mainFunction($5);  IDpop(); }
 	;
 
 module	: MODULE decls END { $$ = uniNode(MODULE, $2); }
@@ -144,8 +148,8 @@ const_initializer
 	| CONST STRING IDENT ASSIGN string { $$ = binNode(ASSIGN, strNode(IDENT, $3), uniNode(STRING, $5)); int type = INFO_CONST_STR; IDnew(type, $3, 0); } 
 	;
 
-function: FUNCTION FORWARD type IDENT { enterFunction($3->value.i+40, $4); } params DONE { $$ = uniNode(FUNCTION, binNode(';', binNode(';', nilNode(FORWARD), $3), binNode('(', strNode(IDENT, $4), $6))); IDpop(); }
-       	| FUNCTION public type IDENT { enterFunction($3->value.i+20+$2->info, $4); currRetType = $3->value.i;} params DO body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode(BODY, $8 ,$9)); defineFunction($3->value.i+20+$2->info, $4); }
+function: FUNCTION FORWARD type IDENT { enterFunction($3->value.i+40, $4); } params DONE { $$ = uniNode(FUNCTION, binNode(';', binNode(';', nilNode(FORWARD), $3), binNode('(', strNode(IDENT, $4), $6))); function($4, 1, nilNode(NIL), $3, nilNode(NIL)); }
+       	| FUNCTION public type IDENT { enterFunction($3->value.i+20+$2->info, $4); currRetType = $3->value.i;} params DO body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode(BODY, $8 ,$9)); function($4, 0, $2, $3, binNode(BODY, $8, $9));  }
 	;
 
 var	: NUMBER IDENT	{ $$ = binNode(INT_TYPE, intNode(TYPE, INFO_INT), strNode(IDENT, $2)); }
@@ -215,7 +219,7 @@ end	: return
 	;
 
 return	:		{ $$ = nilNode(NIL); }
-      	| RETURN	{ $$ = nilNode(RETURN_VOID); if(!IDlevel() || currRetType != INFO_VOID) yyerror("invalid return statement");}
+      	| RETURN	{ $$ = uniNode(RETURN, nilNode(NIL)); if(!IDlevel() || currRetType != INFO_VOID) yyerror("invalid return statement");}
        	| RETURN expr	{ $$ = uniNode(RETURN, $2); if(!IDlevel() || currRetType != $2->info%10 || currRetType%10 == INFO_VOID) yyerror("invalid return statement");}
 	;
 
@@ -245,14 +249,14 @@ str_symbol
 	| TEXTSTRING	{ $$ = strNode(STRING, $1); }
 	;
 
-expr	: lvalue 	{ $$ = uniNode(LVALUE, $1); $$->info = $1->info; }
+expr	: lvalue 	{ $$ = $1; $$->info = $1->info; }
      	| lvalue ASSIGN expr { $$ = binNode(ASSIGN, $1, $3); $$->info = verifyAssign($1, $3); }
 	| INTEGER 	{ $$ = intNode(INTEGER, $1); $$->info = INFO_INT; }
 	| string 	{ $$->info = INFO_STR; }
 	| CHAR	 	{ $$ = intNode(CHAR, $1); $$->info = INFO_CHAR_LIT; }
 	| '-' expr %prec UMINUS { $$ = uniNode(NEG, $2); $$->info = intOnly($2);}
 	| '?'	 	{ $$ = nilNode('?'); $$->info = INFO_INT; }
-	| '&' lvalue %prec UMINUS { $$ = uniNode('&', $2); $$->info = intOnly($2); }
+	| '&' lvalue %prec UMINUS { $$ = uniNode(ADDR, $2); $$->info = intOnly($2); }
 	| '~' expr	{ $$ = uniNode('~', $2); $$->info = intOnly($2);}
 	| expr '+' expr	{ $$ = binNode('+', $1, $3); $$->info = intArrayExpr($1, $3); }
 	| expr '-' expr	{ $$ = binNode('-', $1, $3);  $$->info = intArrayExpr($1, $3);}
@@ -295,6 +299,16 @@ void enterFunction(long type, char* name) {
 	IDpush(); 
 }
 
+void function(char* name, int forward, Node* public,Node* type, Node* body) {
+	if(forward == 0) {
+		defineFunction(type->value.i+20+public->info, name);
+		burgFunction(name, 10, public, type, body); 
+	} else {
+		forwardFunction(name);
+	}
+	IDpop();
+}
+
 void defineFunction(long type, char* name) {
 	long* args;
 	int typeTest = IDfind(name, (void**)&args);
@@ -312,7 +326,6 @@ void defineFunction(long type, char* name) {
 		}
 		
 	}
-	IDpop();
 }
 
 void functionParams(Node* n) {

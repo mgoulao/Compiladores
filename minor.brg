@@ -8,6 +8,10 @@
 #include "postfix.h"
 #include "y.tab.h"
 
+extern FILE *yyout;
+
+char *dupstr(const char *s);
+
 static long brklbl[20], brkcnt; /* break/stop labels */
 static long contlbl[20], contcnt; /* continue/repeat labels */
 
@@ -28,6 +32,11 @@ static char* mkfunc(char *s) {
   return buf;
 }
 
+static void outstr(char *s) {
+  while (*s) fprintf(yyout, pfCHAR, (unsigned char)*s++);
+  fprintf(yyout, pfCHAR, 0);
+}
+
 static int sameVar(NODEPTR_TYPE p) {
   return strcmp(LEFT_CHILD(p)->value.s, LEFT_CHILD(RIGHT_CHILD(p))->value.s) ? 0x7fff : 2;
 }
@@ -42,31 +51,20 @@ static int intOrString(Node *p){
 #define TRACE
 static void yytrace(NODEPTR_TYPE p, int eruleno, int cost, int bestcost);
 
-extern FILE *yyout;
 
 %}
 %term LIST=';' EQ='=' ADD='+' SUB='-' MUL='*' DIV='/' MOD='%' LT='<' GT='>' NOT='~' BOR='|' BAND='&' DIM='['
 %include "y.tab.h"
 %%
 
-file: START_FILE(module)
-file: START_FILE(program)
-
-module:	MODULE(decls)
-program: PROGRAM(decls, body) 1	{  }
-
 body:	BODY(vars, stmts)
+body:	BODY(body, return)
 
 vars: 	NIL
 vars:	VAR(var)
 vars: 	VARS(vars, var)
 
-stmt: 	PRINT(expr)	1 {}
-
-decls: 	NIL
-decls:	DECLS(decls, decl)
-
-decl: 	FORWARD(var)
+stmt: 	PRINT(expr)	1 { fprintf(yyout, pfCALL pfTRASH, "_prints", pfWORD);  }
 
 var:	INT_TYPE(type, IDENT)
 var:	STR_TYPE(type, IDENT)
@@ -83,7 +81,7 @@ stmts: 	STMTS(stmts, stmt)
 
 %! types
 expr:	INTEGER		1 { fprintf(yyout, pfIMM, p->value.i);  }
-expr:	STRING		1 { lbl++; fprintf(yyout, pfRODATA pfALIGN pfLABEL, mklbl(lbl)); /*outstr(p->value.s); */fprintf(yyout, pfTEXT pfADDR, mklbl(lbl));  }
+expr:	STRING		1 { lbl++; fprintf(yyout, pfRODATA pfALIGN pfLABEL, mklbl(lbl)); outstr(p->value.s); fprintf(yyout, pfTEXT pfADDR, mklbl(lbl));  }
 expr:	CHAR		1 { fprintf(yyout, pfIMM, p->value.i); }
 
 %! expressions string and int
@@ -127,30 +125,27 @@ stmt:	FOR(forExprs, STMTS(stmts, end))	1 {/* brkcnt--; fprintf(yyout, pfJMP pfLA
 
 forExprs: FOR_EXPRS(FOR_EXPRS(expr, expr), expr) 1 { }
 
-end: return		1 {}
-end: REPEAT		1 { fprintf(yyout, pfJMP, mklbl(contlbl[contcnt])); }
-end: STOP		1 { fprintf(yyout, pfJMP, mklbl(brklbl[brkcnt])); }
+end:	return
+end:	REPEAT		1 { fprintf(yyout, pfJMP, mklbl(contlbl[contcnt])); }
+end:	STOP		1 { fprintf(yyout, pfJMP, mklbl(brklbl[brkcnt])); }
 
 return: NIL		1 {}
-return: RETURN_VOID	1 {}
-return: RETURN(expr)	1 {}
+return: RETURN(NIL)	1 { fprintf(yyout, pfLEAVE pfRET); }
+return: RETURN(expr)	1 { fprintf(yyout, pfLEAVE pfRET); }
 
 %! lvalues
-%! lvalue:	LOCAL		1 { fprintf(yyout, pfLOCAL, p->value.i * (pfWORD/4)); }
-%! lvalue:	ADDR		1 { fprintf(yyout, pfADDR, p->value.s); }
-%! lvalue:	LOAD(lvalue)	1 { fprintf(yyout, pfLOAD); }
-lvec:	lvalue		1 { fprintf(yyout, pfLOAD); }
-lvalue:	INDEX(lvec, expr) 1 { fprintf(yyout, pfIMM pfMUL pfADD, pfWORD); }
-expr:	LVALUE(lvalue)	1 { fprintf(yyout, pfLOAD); }
-expr:	BAND(lvalue)	1 {   }
+lvalue:	lvalue		1 { fprintf(yyout, pfLOAD); }
+lvalue:	INDEX(lvalue, expr) 1 { fprintf(yyout, pfIMM pfMUL pfADD, pfWORD); }
+lvalue:	IDENT		1 { fprintf(yyout, pfLOCAL, p->value.i * (pfWORD/4)); }
+expr:	ADDR(lvalue)	1 { fprintf(yyout, pfADDR, p->value.s);  }
 
 %! assignment (multiple assignment)
 assign: expr		1 { fprintf(yyout, pfDUP); }
-expr:	ASSIGN(assign, lvalue)	1 { fprintf(yyout, pfSTORE); }
+expr:	ASSIGN(assign, lvalue)		1 { fprintf(yyout, pfSTORE); }
 %! expr:	ASSIGN(expr, LOCAL)	1 { fprintf(yyout, pfDUP pfLOCA, RIGHT_CHILD(p)->value.i * (pfWORD/4)); }
 %! expr:	ASSIGN(expr, ADDR)	1 { fprintf(yyout, pfDUP pfADDRA, RIGHT_CHILD(p)->value.s); }
-%! expr:	ADDR		1 { fprintf(yyout, pfADDRV, p->value.s); }
-stmt:	ALOC(aloc, lvalue)  1 { fprintf(yyout, pfSTORE); }
+%! expr:	ADDR			1 { fprintf(yyout, pfADDRV, p->value.s); }
+stmt:	ALOC(aloc, lvalue)  		1 { fprintf(yyout, pfSTORE); }
 aloc:	expr		1 { fprintf(yyout, pfIMM pfMUL pfALLOC pfSP, pfWORD); }
 
 
@@ -161,34 +156,20 @@ extern char **yynames;
 extern int trace, errors;
 
 void evaluate(Node* root) {
-  if (errors) return;
-  if (trace) printNode(root, stdout, yynames);
-  fprintf(yyout, pfTEXT pfALIGN pfGLOBL pfLABEL, "_main", pfFUNC, "_main");
-  yyselect(root);
-  fprintf(yyout, pfRET pfDATA);
-  fprintf(yyout, pfEXTRN pfEXTRN pfEXTRN pfEXTRN,
-  		"_prints", "_printi", "_println", "_readi");
+	if (errors) return;
+  	//if (trace) printNode(root, stdout, yynames);
+  	fprintf(yyout, pfTEXT pfALIGN pfGLOBL pfLABEL, "_main", pfFUNC, "_main");
+  	yyselect(root);
+  	fprintf(yyout, pfRET pfDATA);
 }
 
-void externs()
-{
-  int i;
-  
-  for (i = 0; i < extcnt; i++)
-    if (extrns[i])
-      fprintf(yyout, pfEXTRN, extrns[i]);
-}
-
-void publicVariable(char* name, Node* public, int isConst, Node* vectorSize, Node* init) {
-	if (public->attrib == PUBLIC) {
-  		fprintf(yyout, pfGLOBL, name);
+void externs() {
+	int i;
+ 	for (i = 0; i < extcnt; i++) {
+		if (extrns[i])
+			fprintf(yyout, pfEXTRN, extrns[i]);
 	}
-	variable(name, isConst, vectorSize, init);
-}
-
-void forwardVariable(char* name, int isConst, Node* vectorSize, Node* init) {
- 	fprintf(yyout, pfEXTRN, name);
-	variable(name,  isConst, vectorSize, init);
+	fprintf(yyout, pfEXTRN pfEXTRN, "_prints", "_readi");
 }
 
 void variable(char* name, int isConst, Node* vectorSize, Node* init) {
@@ -217,19 +198,40 @@ void variable(char* name, int isConst, Node* vectorSize, Node* init) {
     if (extrns[i] && strcmp(extrns[i], name) == 0) extrns[i] = 0;
 }
 
-void function(char *name, int enter, Node *stmt) {
+void publicVariable(char* name, Node* public, int isConst, Node* vectorSize, Node* init) {
+	if (public->attrib == PUBLIC) {
+  		fprintf(yyout, pfGLOBL, name);
+	}
+	variable(name, isConst, vectorSize, init);
+}
+
+void forwardVariable(char* name, int isConst, Node* vectorSize, Node* init) {
+ 	fprintf(yyout, pfEXTRN, name);
+	variable(name,  isConst, vectorSize, init);
+}
+
+void forwardFunction(char* name) {
+	extrns[extcnt++] = dupstr(mkfunc(name));
+}
+
+
+void burgFunction(char *name, int enter, Node* public, Node* type, Node *stmt) {
   int i;
   if (errors) return;
-  if (trace) printNode(stmt, 0, yynames);
+  //if (trace) printNode(stmt, 0, yynames);
   fflush(stdout);
   fprintf(yyout, pfTEXT pfALIGN pfGLOBL pfLABEL pfENTER, mkfunc(name), pfFUNC, mkfunc(name), enter * (pfWORD/4));
   yyselect(stmt);
-  fprintf(yyout, pfLEAVE pfRET); /* just in case ... */
+  fprintf(yyout, pfLEAVE pfRET);
   freeNode(stmt);
   for (i = 0; i < extcnt; i++)
     if (extrns[i] && strcmp(extrns[i], mkfunc(name)) == 0) extrns[i] = 0;
 }
 
+void mainFunction(Node* body) {
+	printf("EVALUATE MAIN or start-end in minor\n");
+	burgFunction("main", 10, nilNode(NIL), intNode(NUMBER, 1), body);
+}
 
 static void yytrace(NODEPTR_TYPE p, int eruleno, int cost, int bestcost)
 {
@@ -242,7 +244,7 @@ static void yytrace(NODEPTR_TYPE p, int eruleno, int cost, int bestcost)
 	  extern int debugNode;
 	  fprintf(stderr, "0x%lx:%s NO MATCH %s with cost %d vs. %d\n", (long)p, tname, yystring[eruleno], cost, bestcost);
 	  debugNode = 1;
-	  printNode(p, stderr, yynames);
+	  //printNode(p, stderr, yynames);
 	  debugNode = 0;
 	}
 }
