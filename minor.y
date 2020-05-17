@@ -68,7 +68,7 @@ void defineFunction(long type, char* name);
 %token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN 
 
 // AST Tokens
-%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS DECLS ARGS VAR VARS INTS INDEX FOR_EXPRS IF_ELIFS INT_TYPE STR_TYPE ARR_TYPE NEG PRINT ADDR FBODY TEXT LOCAL
+%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS DECLS ARGS VAR VARS INTS INDEX FOR_EXPRS IF_ELIFS INT_TYPE STR_TYPE ARR_TYPE NEG PRINT ADDR FBODY TEXT LOCAL ELIFS
 
 %nonassoc IF
 %nonassoc ELSE
@@ -231,7 +231,7 @@ stmts
 	;
 
 elifs	:		{ $$ = nilNode(NIL); }
-	| ELIF expr THEN stmts end elifs { $$ = binNode(ELIF, $2, binNode(STMTS, binNode(STMTS, $4, $5), $6)); nonVoidExpr($2);}
+	|  ELIF expr THEN stmts end elifs { $$ = binNode(ELIFS, binNode(ELIF, $2, binNode(STMTS, $4, $5)), $6); nonVoidExpr($2);}
 	;
 
 string	: TEXTSTRING 	{ $$ = binNode(STRING, strNode(TEXTSTRING, $1), nilNode(NIL)); }

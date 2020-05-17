@@ -140,17 +140,15 @@ expr:	CALL(IDENT, args)	1 { fprintf(yyout, pfCALL pfTRASH, mkfunc(LEFT_CHILD(p)-
 args:	ARGS(args, expr)
 
 %! if-elifs-else
-stmt: if
-stmt: ifElif
-stmt:	ELSE(ifElif, stmtsAndEnd)	1 {/* fprintf(yyout, pfLABEL, mklbl(LEFT_CHILD(p)->place));*/ }
-ifElif:	IF_ELIFS(if, elifs)	1 {}
-if:	IF(cond, stmtsAndEnd)	1 {/* p->place = ++lbl; fprintf(yyout, pfJMP pfLABEL, mklbl(p->place), mklbl(LEFT_CHILD(p)->place));*/ }
+stmt: 	if	1 { fprintf(yyout, pfLABEL, mklbl(p->place)); }
+stmt: 	ifElif	1 { fprintf(yyout, pfLABEL pfLABEL, mklbl(p->place/10), mklbl(p->place%10)); }
+stmt:	ELSE(ifElif, stmtsAndEnd)	1 { fprintf(yyout, pfLABEL, mklbl(LEFT_CHILD(p)->place)); }
+ifElif:	IF_ELIFS(if, elifs)	1 { p->place = ++lbl; fprintf(yyout, pfLABEL pfJMP pfLABEL, mklbl(LEFT_CHILD(p)->place), mklbl(p->place), mklbl(RIGHT_CHILD(p)->place)); }
+if:	IF(cond, stmtsAndEnd)	1 { p->place = ++lbl; fprintf(yyout, pfJMP pfLABEL, mklbl(p->place),  mklbl(LEFT_CHILD(p)->place)); }
 %! if elif
-elifs:	NIL
-elifs:	ELIF(cond, STMTS(stmtsAndEnd, elifs))	1 {}
-
-%! simple if (no else): uses only one label
-stmt:	IF(cond, stmtsAndEnd)	1 { /*fprintf(yyout, pfLABEL, mklbl(LEFT_CHILD(p)->place));*/ }
+elifs:	NIL	{ p->place = ++lbl; fprintf(yyout, pfJMP, mklbl(p->place)); }
+elifs:	ELIFS(elif, elifs)	1 { p->place = RIGHT_CHILD(p)->place; fprintf(yyout, pfLABEL, mklbl(LEFT_CHILD(p)->place)); }
+elif: ELIF(cond, stmtsAndEnd)	1 { p->place = ++lbl; fprintf(yyout, pfJMP pfLABEL, mklbl(p->place), mklbl(LEFT_CHILD(p)->place)); }
 cond:	expr		1 { p->place = ++lbl; fprintf(yyout, pfJZ, mklbl(p->place)); }
 
 %! for loop

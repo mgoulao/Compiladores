@@ -1,14 +1,16 @@
 Funcao de ackermann: nao usar argumentos superiores a m=3 n=12
-DLUfbslkdjbfjkxvscv
-xcv
-xc,vbxc
-vx
-cv
-xc
 program $ ackermann $
 start
-  if 4 > 2 then
-     6! "\n"!
+  number a;
+  a := 3;
+  if a = 1 then
+    2!
+  elif a = 2 then
+    6!
+  elif a = 3 then
+    9!
+  else
+    10!
   fi
 end
 Fim da funcao de ackermann
