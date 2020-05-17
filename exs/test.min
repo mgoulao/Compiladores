@@ -1,4 +1,14 @@
-program
+Funcao de ackermann: nao usar argumentos superiores a m=3 n=12
+DLUfbslkdjbfjkxvscv
+xcv
+xc,vbxc
+vx
+cv
+xc
+program $ ackermann $
 start
-	"Hello World eu sou o Manel " '\n' 69 !
+  if 4 > 2 then
+     6! "\n"!
+  fi
 end
+Fim da funcao de ackermann

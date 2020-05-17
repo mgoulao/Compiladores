@@ -26,7 +26,7 @@ CHAR_HEX \\[0-9A-Fa-f][0-9A-Fa-f]?
 
 <IGN>^"program"		hasStarted = 1; BEGIN INITIAL; return PROGRAM;
 <IGN>^"module"		hasStarted = 1; BEGIN INITIAL; return MODULE;
-
+<IGN>.|\n
 "$$".*			; /* operational comment */
 "$"			BEGIN COM; /* explanatory comment */ 
 <COM>"$"		BEGIN INITIAL;

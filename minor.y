@@ -24,13 +24,14 @@ extern int yylex();
 char errmsg[80];
 static long* funcArgs;
 static int loopLvl = 0, funcLvl = 0, currRetType = 1; 
+static long fPos = 0;
 
 void publicVariable(char* name, Node* public, int isConst, Node* vectorSize, Node* init);
 void forwardVariable(char* name, int isConst, Node* vector, Node* init);
 void variable(char* name, int isConst, Node* vectorSize, Node* init);
 void forwardFunction(char* name);
 void burgFunction(char* name, int enter, Node* public, Node* type, Node* stmt);
-void mainFunction(Node* body);
+void mainFunction(Node* body, int enter);
 void externs();
 void evaluate();
 
@@ -67,7 +68,7 @@ void defineFunction(long type, char* name);
 %token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN 
 
 // AST Tokens
-%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS DECLS ARGS VAR VARS INTS INDEX FOR_EXPRS IF_ELIFS INT_TYPE STR_TYPE ARR_TYPE NEG PRINT ADDR FBODY TEXT
+%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS DECLS ARGS VAR VARS INTS INDEX FOR_EXPRS IF_ELIFS INT_TYPE STR_TYPE ARR_TYPE NEG PRINT ADDR FBODY TEXT LOCAL
 
 %nonassoc IF
 %nonassoc ELSE
@@ -98,17 +99,17 @@ file	: program 	{ $$ = uniNode(START_FILE, $1); }
 	| module 	{ $$ = uniNode(START_FILE, $1); } 
       	;
 
-program	: PROGRAM decls START { IDpush(); currRetType = INFO_INT; } body END { $$ = binNode(PROGRAM, $2, $5); mainFunction($5);  IDpop(); }
+program	: PROGRAM decls START { IDpush(); currRetType = INFO_INT; fPos = 0; } body END { $$ = binNode(PROGRAM, $2, $5); mainFunction($5, -fPos);  IDpop(); }
 	;
 
 module	: MODULE decls END { $$ = uniNode(MODULE, $2); }
 	;
 
 decl	: function
-	| public opt_initializer { $$ = binNode(ASSIGN, $1, $2); } 
-	| FORWARD CONST var { $$ = uniNode(CONST, $3); int type = LEFT_CHILD($3)->value.i+10; IDnew(type, RIGHT_CHILD($3)->value.s, 0); }
-	| FORWARD var	{ $$ = uniNode(FORWARD, $2); int type = LEFT_CHILD($2)->value.i; IDnew(type, RIGHT_CHILD($2)->value.s, 0); }
-	| public const_initializer { binNode(CONST, $1, $2); }	
+	| public opt_initializer { $$ = binNode(ASSIGN, $1, $2); publicVariable(LEFT_CHILD($2)->value.s, $1, 0, nilNode(NIL), $2); } 
+	| FORWARD CONST var { $$ = uniNode(CONST, $3); int type = LEFT_CHILD($3)->value.i+10; char* name = RIGHT_CHILD($3)->value.s; IDnew(type, name, 0); forwardVariable(name, 1, nilNode(NIL), nilNode(NIL)); }
+	| FORWARD var	{ $$ = uniNode(FORWARD, $2); int type = LEFT_CHILD($2)->value.i; char* name = RIGHT_CHILD($2)->value.s;IDnew(type, name, 0); forwardVariable(name, 0, nilNode(NIL), nilNode(NIL)); }
+	| public const_initializer { binNode(CONST, $1, $2); publicVariable(LEFT_CHILD($2)->value.s, $1, 1, nilNode(NIL), $2);  }	
 	;
 
 decls 	:		{ $$ = nilNode(NIL); }
@@ -149,7 +150,7 @@ const_initializer
 	;
 
 function: FUNCTION FORWARD type IDENT { enterFunction($3->value.i+40, $4); } params DONE { $$ = uniNode(FUNCTION, binNode(';', binNode(';', nilNode(FORWARD), $3), binNode('(', strNode(IDENT, $4), $6))); function($4, 1, nilNode(NIL), $3, nilNode(NIL)); }
-       	| FUNCTION public type IDENT { enterFunction($3->value.i+20+$2->info, $4); currRetType = $3->value.i;} params DO body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode(BODY, $8 ,$9)); function($4, 0, $2, $3, binNode(BODY, $8, $9));  }
+       	| FUNCTION public type IDENT { enterFunction($3->value.i+20+$2->info, $4); currRetType = $3->value.i;} params {fPos = 0;} DO body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode(BODY, $9 ,$10)); function($4, 0, $2, $3, binNode(BODY, $9, $10));  }
 	;
 
 var	: NUMBER IDENT	{ $$ = binNode(INT_TYPE, intNode(TYPE, INFO_INT), strNode(IDENT, $2)); }
@@ -167,14 +168,15 @@ args	: expr		{ $$ = binNode(ARGS, $1, nilNode(NIL)); }
      	| args ',' expr	{ $$ = binNode(ARGS, $3, $1); }
 	;
 
-vars 	: var ';'	{ $$ = uniNode(VAR, $1); int type = LEFT_CHILD($1)->value.i; IDnew(type, getArrayName(RIGHT_CHILD($1)), 0); }
+vars 	: var ';'	{ $$ = uniNode(VAR, $1); int type = LEFT_CHILD($1)->value.i; fPos -= pfWORD; IDnew(type, getArrayName(RIGHT_CHILD($1)), (void*)fPos); }
 	| vars var ';'	{ $$ = binNode(VARS, $1, $2); 
 				int type = LEFT_CHILD($2)->value.i;
-				IDnew(type, getArrayName(RIGHT_CHILD($2)), 0); 
+				fPos -= pfWORD; int pos = fPos;
+				IDnew(type, getArrayName(RIGHT_CHILD($2)), (void*)fPos); 
 	 }
 	;
 
-lvalue	: IDENT		{ $$ = strNode(IDENT, $1); $$->info = verifyLVName($1);  }
+lvalue	: IDENT		{ $$ = variableName($1); $$->info = verifyLVName($1);  }
        	| lvalue '[' expr ']' { $$ = binNode(INDEX, $1, $3); $$->info = strOrArrayIndex($1, $3); }
 	; 
 
@@ -204,7 +206,7 @@ intOrChar
 	| CHAR		{ $$ = intNode(NUMBER, $1); }
 	;
 
-stmt  : IF expr THEN stmts end elifs FI { $$ = binNode(IF, $2, binNode(STMTS, binNode(STMTS, $4, $5), uniNode(ELIF, $6))); nonVoidExpr($2); }
+stmt  : IF expr THEN stmts end elifs FI { $$ = binNode(IF_ELIFS, binNode(IF, $2, binNode(STMTS, $4, $5)), $6); nonVoidExpr($2); }
 	| IF expr THEN stmts end elifs ELSE stmts end FI { $$ = binNode(ELSE, binNode(IF_ELIFS, binNode(IF, $2, binNode(STMTS, $4, $5)), $6), binNode(STMTS, $8, $9)); nonVoidExpr($2);}  
 	| FOR expr UNTIL expr STEP expr DO {loopLvl++;} stmts end DONE { $$ = binNode(FOR, binNode(FOR_EXPRS, binNode(FOR_EXPRS, $2, $4), $6), binNode(STMTS, $9, $10)); nonVoidExpr($2); nonVoidExpr($4);nonVoidExpr($6);} 
 	| expr ';'
@@ -290,19 +292,21 @@ void enterFunction(long type, char* name) {
 	funcArgs[0] = 0;
 	int typeTest = IDfind(name, (void*)IDtest);
 	// If function is FORWARD or new
-	if(typeTest == -1)
+	if(typeTest == -1) {
 		IDnew(type, name, funcArgs);
+		if(type != 3) fPos = 2*pfWORD;
+	}
 	else if (typeTest > 40 && typeTest-20 == type) {
 		// wait for parameters to verify
 	} else yyerror("name already used");
-
+	
 	IDpush(); 
 }
 
 void function(char* name, int forward, Node* public,Node* type, Node* body) {
 	if(forward == 0) {
 		defineFunction(type->value.i+20+public->info, name);
-		burgFunction(name, 10, public, type, body); 
+		burgFunction(name, -fPos, public, type, body); 
 	} else {
 		forwardFunction(name);
 	}
@@ -330,8 +334,15 @@ void defineFunction(long type, char* name) {
 
 void functionParams(Node* n) {
 	int type = LEFT_CHILD(n)->value.i;
-	IDnew(type, getArrayName(RIGHT_CHILD(n)), 0); 
+	IDnew(type, getArrayName(RIGHT_CHILD(n)), (void*)fPos); 
 	funcArgs[++funcArgs[0]] = type;
+	fPos += pfWORD;
+}
+
+Node* variableName(char* name) {
+	Node* node = strNode(IDENT, name);
+	if(IDlevel() != 0) node = intNode(LOCAL, fPos);
+	return node;
 }
 
 int verifyAssign(Node* lvNode, Node* valNode) {
