@@ -34,7 +34,26 @@ static char* mkfunc(char *s) {
 
 static void outstr(char *s) {
   while (*s) fprintf(yyout, pfCHAR, (unsigned char)*s++);
-  fprintf(yyout, pfCHAR, 0);
+}
+
+static void outCharAndInt(int c) {
+	fprintf(yyout, pfCHAR, c);
+}
+
+static void aggregationStr(Node* string) {
+	if(string->attrib == TEXTSTRING && string->value.s != NULL) {
+		outstr(string->value.s);
+		return;
+	}
+	if(string->attrib == NUMBER) {
+		outCharAndInt(string->value.i);
+		return;
+	}
+	Node* leftNode = LEFT_CHILD(string);	
+	Node* rightNode = RIGHT_CHILD(string);	
+	if(leftNode != NULL && leftNode->attrib != NIL) aggregationStr(leftNode);
+	if(rightNode != NULL && rightNode->attrib != NIL) aggregationStr(rightNode);
+
 }
 
 static int sameVar(NODEPTR_TYPE p) {
@@ -81,7 +100,7 @@ stmts: 	STMTS(stmts, stmt)
 
 %! types
 expr:	INTEGER		1 { fprintf(yyout, pfIMM, p->value.i);  }
-expr:	STRING		1 { lbl++; fprintf(yyout, pfRODATA pfALIGN pfLABEL, mklbl(lbl)); outstr(p->value.s); fprintf(yyout, pfTEXT pfADDR, mklbl(lbl));  }
+expr:	STRING		1 { lbl++; fprintf(yyout, pfRODATA pfALIGN pfLABEL, mklbl(lbl)); aggregationStr(p); printf(yyout, pfCHAR, 0); fprintf(yyout, pfTEXT pfADDR, mklbl(lbl));  }
 expr:	CHAR		1 { fprintf(yyout, pfIMM, p->value.i); }
 
 %! expressions string and int
@@ -145,7 +164,7 @@ expr:	ASSIGN(assign, lvalue)		1 { fprintf(yyout, pfSTORE); }
 %! expr:	ASSIGN(expr, LOCAL)	1 { fprintf(yyout, pfDUP pfLOCA, RIGHT_CHILD(p)->value.i * (pfWORD/4)); }
 %! expr:	ASSIGN(expr, ADDR)	1 { fprintf(yyout, pfDUP pfADDRA, RIGHT_CHILD(p)->value.s); }
 %! expr:	ADDR			1 { fprintf(yyout, pfADDRV, p->value.s); }
-stmt:	ALOC(aloc, lvalue)  		1 { fprintf(yyout, pfSTORE); }
+stmt:	ALOC(lvalue, aloc)  		1 { fprintf(yyout, pfSTORE); }
 aloc:	expr		1 { fprintf(yyout, pfIMM pfMUL pfALLOC pfSP, pfWORD); }
 
 

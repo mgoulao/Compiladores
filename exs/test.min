@@ -1,4 +1,4 @@
 program
 start
-	"Hello World"!
+	"Hello World eu sou o Manel " '\n' 69 !
 end

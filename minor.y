@@ -67,7 +67,7 @@ void defineFunction(long type, char* name);
 %token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN 
 
 // AST Tokens
-%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS DECLS ARGS VAR VARS INTS INDEX FOR_EXPRS IF_ELIFS INT_TYPE STR_TYPE ARR_TYPE NEG PRINT ADDR FBODY
+%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS DECLS ARGS VAR VARS INTS INDEX FOR_EXPRS IF_ELIFS INT_TYPE STR_TYPE ARR_TYPE NEG PRINT ADDR FBODY TEXT
 
 %nonassoc IF
 %nonassoc ELSE
@@ -155,7 +155,7 @@ function: FUNCTION FORWARD type IDENT { enterFunction($3->value.i+40, $4); } par
 var	: NUMBER IDENT	{ $$ = binNode(INT_TYPE, intNode(TYPE, INFO_INT), strNode(IDENT, $2)); }
     	| STRING IDENT	{ $$ =  binNode(STR_TYPE, intNode(TYPE, INFO_STR), strNode(IDENT, $2)); }
 	| ARRAY IDENT	{ $$ =  binNode(ARR_TYPE, intNode(TYPE, INFO_ARRAY), strNode(IDENT, $2)); }
-    	| ARRAY IDENT '[' INTEGER ']' { $$ = binNode(ARRAY, intNode(TYPE, INFO_ARRAY), binNode('[', intNode(INTEGER, $4), strNode(STRING, $2))); if($4 <= 0) yyerror("invalid array dimension"); }
+    	| ARRAY IDENT '[' INTEGER ']' { $$ = binNode(ARRAY, intNode(TYPE, INFO_ARRAY), binNode('[', intNode(INTEGER, $4), strNode(IDENT, $2))); if($4 <= 0) yyerror("invalid array dimension"); }
 	;
 
 params	:		{ $$ = nilNode(NIL); }
@@ -232,7 +232,7 @@ elifs	:		{ $$ = nilNode(NIL); }
 	| ELIF expr THEN stmts end elifs { $$ = binNode(ELIF, $2, binNode(STMTS, binNode(STMTS, $4, $5), $6)); nonVoidExpr($2);}
 	;
 
-string	: TEXTSTRING 	{ $$ = strNode(STRING, $1); }
+string	: TEXTSTRING 	{ $$ = binNode(STRING, strNode(TEXTSTRING, $1), nilNode(NIL)); }
        	| str_init str_continuation { $$ = binNode(STRING, $1, $2); } 
 	;
 
@@ -246,7 +246,7 @@ str_init: str_symbol str_symbol	{ $$ = binNode(STRING_ELEM, $1, $2); }
 
 str_symbol
 	: intOrChar
-	| TEXTSTRING	{ $$ = strNode(STRING, $1); }
+	| TEXTSTRING	{ $$ = strNode(TEXTSTRING, $1); }
 	;
 
 expr	: lvalue 	{ $$ = $1; $$->info = $1->info; }
