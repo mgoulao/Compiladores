@@ -68,7 +68,7 @@ void defineFunction(long type, char* name);
 %token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN 
 
 // AST Tokens
-%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS DECLS ARGS VAR VARS INTS INDEX FOR_EXPRS IF_ELIFS INT_TYPE STR_TYPE ARR_TYPE NEG PRINT ADDR FBODY TEXT LOCAL ELIFS
+%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS DECLS ARGS VAR VARS INTS INDEX FOR_EXPRS IF_ELIFS INT_TYPE STR_TYPE ARR_TYPE NEG PRINT ADDR FBODY LOCAL ELIFS FOR_START FOR_COND FOR_END
 
 %nonassoc IF
 %nonassoc ELSE
@@ -208,7 +208,7 @@ intOrChar
 
 stmt  : IF expr THEN stmts end elifs FI { $$ = binNode(IF_ELIFS, binNode(IF, $2, binNode(STMTS, $4, $5)), $6); nonVoidExpr($2); }
 	| IF expr THEN stmts end elifs ELSE stmts end FI { $$ = binNode(ELSE, binNode(IF_ELIFS, binNode(IF, $2, binNode(STMTS, $4, $5)), $6), binNode(STMTS, $8, $9)); nonVoidExpr($2);}  
-	| FOR expr UNTIL expr STEP expr DO {loopLvl++;} stmts end DONE { $$ = binNode(FOR, binNode(FOR_EXPRS, binNode(FOR_EXPRS, $2, $4), $6), binNode(STMTS, $9, $10)); nonVoidExpr($2); nonVoidExpr($4);nonVoidExpr($6);} 
+	| FOR expr UNTIL expr STEP expr DO {loopLvl++;} stmts end DONE { $$ = binNode(FOR, binNode(FOR_EXPRS, binNode(FOR_EXPRS, $2, nilNode(FOR_START)), binNode(FOR_EXPRS, $4, nilNode(FOR_COND))), binNode(FOR_END, binNode(STMTS, $9, $10), $6)); nonVoidExpr($2); nonVoidExpr($4);nonVoidExpr($6);} 
 	| expr ';'
 	| expr '!'	{ $$ = uniNode(PRINT, $1); printExpr($1); }
 	| lvalue ALOC  expr ';' { $$ = binNode(ALOC, $1, $3); alocExpr($1, $3); }
@@ -263,7 +263,7 @@ expr	: lvalue 	{ $$ = $1; $$->info = $1->info; }
 	| expr '+' expr	{ $$ = binNode('+', $1, $3); $$->info = intArrayExpr($1, $3); }
 	| expr '-' expr	{ $$ = binNode('-', $1, $3);  $$->info = intArrayExpr($1, $3);}
 	| expr '*' expr	{ $$ = binNode('*', $1, $3);  $$->info = intExpr($1, $3);}
-	| expr POW expr	{ $$ = binNode('^', $1, $3);  $$->info = intExpr($1, $3);}
+	| expr POW expr	{ $$ = binNode(POW, $1, $3);  $$->info = intExpr($1, $3);}
 	| expr '/' expr	{ $$ = binNode('/', $1, $3);  $$->info = intExpr($1, $3);}
 	| expr '%' expr	{ $$ = binNode('%', $1, $3);  $$->info = intExpr($1, $3);}
 	| expr '<' expr	{ $$ = binNode('<', $1, $3); $$->info = strIntExpr($1, $3); }

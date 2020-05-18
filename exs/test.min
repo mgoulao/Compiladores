@@ -1,16 +1,20 @@
-Funcao de ackermann: nao usar argumentos superiores a m=3 n=12
-program $ ackermann $
+program
+    number x := 3;
+    string s := "abc"
 start
-  number a;
-  a := 3;
-  if a = 1 then
-    2!
-  elif a = 2 then
-    6!
-  elif a = 3 then
-    9!
-  else
-    10!
-  fi
+    number input;
+
+    input := ?;
+
+    (input + 2) * 3 / 4 - 2 ^ x ^ 2 !
+
+    x := (x & 0) | x & ~input;
+
+    x := input > x;
+
+    -2 <= 3 = 4 >= 5 !
+
+    &x !
+
+    input % x + 1 !
 end
-Fim da funcao de ackermann

@@ -80,7 +80,7 @@ static void yytrace(NODEPTR_TYPE p, int eruleno, int cost, int bestcost);
 
 
 %}
-%term LIST=';' EQ='=' ADD='+' SUB='-' MUL='*' DIV='/' MOD='%' LT='<' GT='>' NOT='~' BOR='|' BAND='&' DIM='[' CALL='('
+%term LIST=';' EQ='=' ADD='+' SUB='-' MUL='*' DIV='/' MOD='%' NOT='~' LT='<' GT='>' BOR='|' BAND='&' DIM='[' CALL='(' READ='?'
 %include "y.tab.h"
 %%
 
@@ -125,8 +125,9 @@ expr:   GE(expr,expr)   1 { fprintf(yyout, pfGE); }
 expr:   MUL(expr,expr)  1 { fprintf(yyout, pfMUL); }
 expr:   DIV(expr,expr)  1 { fprintf(yyout, pfDIV); }
 expr:   MOD(expr,expr)  1 { fprintf(yyout, pfMOD); }
+expr:	POW(expr,expr)	1 {/*TODO*/}
 
-expr:	NEG(expr)	1 {}
+expr:	NOT(expr)	1 {}
 
 %! expressions int and array
 expr:   ADD(expr,expr)  1 { fprintf(yyout, pfADD); }
@@ -136,6 +137,8 @@ expr:   MOD(expr,expr)  1 { fprintf(yyout, pfMOD); }
 
 %! call function
 expr:	CALL(IDENT, args)	1 { fprintf(yyout, pfCALL pfTRASH, mkfunc(LEFT_CHILD(p)->value.s)); }
+%! call _readi
+expr:	READ	1 { fprintf(yyout, pfCALL, "_readi"); }
 
 args:	ARGS(args, expr)
 
@@ -151,10 +154,17 @@ elifs:	ELIFS(elif, elifs)	1 { p->place = RIGHT_CHILD(p)->place; fprintf(yyout, p
 elif: ELIF(cond, stmtsAndEnd)	1 { p->place = ++lbl; fprintf(yyout, pfJMP pfLABEL, mklbl(p->place), mklbl(LEFT_CHILD(p)->place)); }
 cond:	expr		1 { p->place = ++lbl; fprintf(yyout, pfJZ, mklbl(p->place)); }
 
-%! for loop
-stmt:	FOR(forExprs, STMTS(stmts, end))	1 {/* brkcnt--; fprintf(yyout, pfJMP pfLABEL, mklbl(LEFT_CHILD(LEFT_CHILD(p))->place), mklbl(LEFT_CHILD(p)->place));*/ }
 
-forExprs: FOR_EXPRS(FOR_EXPRS(expr, expr), expr) 1 { }
+
+%! for loop
+stmt:	FOR(forExprs, forEnd)	1 { brkcnt--; contcnt--; fprintf(yyout, pfJMP pfLABEL, mklbl(LEFT_CHILD(LEFT_CHILD(p))->place+1), mklbl(LEFT_CHILD(p)->place)); }
+
+forExprs:	FOR_EXPRS(forStart, forCond)	1 { p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJZ, mklbl(lbl)); }
+forCond:	FOR_EXPRS(expr, FOR_COND)	1 {   }
+forStart:	FOR_EXPRS(expr, FOR_START)	1 { p->place = (contlbl[++contcnt] = ++lbl); int endToStart = ++lbl; fprintf(yyout, pfLABEL, mklbl(endToStart));  }
+forEnd:		FOR_END(forStmts, expr)	1 { }
+forStmts: stmtsAndEnd	1 { fprintf(yyout, pfLABEL, mklbl(contlbl[contcnt])); }
+
 
 end:	return
 end:	REPEAT		1 { fprintf(yyout, pfJMP, mklbl(contlbl[contcnt])); }
