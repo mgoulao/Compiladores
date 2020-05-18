@@ -68,7 +68,7 @@ void defineFunction(long type, char* name);
 %token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN 
 
 // AST Tokens
-%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS DECLS ARGS VAR VARS INTS INDEX FOR_EXPRS IF_ELIFS INT_TYPE STR_TYPE ARR_TYPE NEG PRINT ADDR FBODY LOCAL ELIFS FOR_START FOR_COND FOR_END
+%token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS PARAM DECLS ARGS VAR VARS INTS INDEX FOR_EXPRS IF_ELIFS INT_TYPE STR_TYPE ARR_TYPE NEG PRINT ADDR FBODY LOCAL ELIFS FOR_START FOR_COND FOR_END FUNC_PARAMS NO_ARG_CALL
 
 %nonassoc IF
 %nonassoc ELSE
@@ -150,7 +150,7 @@ const_initializer
 	;
 
 function: FUNCTION FORWARD type IDENT { enterFunction($3->value.i+40, $4); } params DONE { $$ = uniNode(FUNCTION, binNode(';', binNode(';', nilNode(FORWARD), $3), binNode('(', strNode(IDENT, $4), $6))); function($4, 1, nilNode(NIL), $3, nilNode(NIL)); }
-       	| FUNCTION public type IDENT { enterFunction($3->value.i+20+$2->info, $4); currRetType = $3->value.i;} params {fPos = 0;} DO body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode(BODY, $9 ,$10)); function($4, 0, $2, $3, binNode(BODY, $9, $10));  }
+       	| FUNCTION public type IDENT { enterFunction($3->value.i+20+$2->info, $4); currRetType = $3->value.i; fPos = pfWORD; } params { fPos = 0; } DO body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode(BODY, $9 ,$10)); function($4, 0, $2, $3, binNode(FUNCTION, uniNode(FUNC_PARAMS, $6), binNode(BODY, $9, $10)));  }
 	;
 
 var	: NUMBER IDENT	{ $$ = binNode(INT_TYPE, intNode(TYPE, INFO_INT), strNode(IDENT, $2)); }
@@ -160,8 +160,8 @@ var	: NUMBER IDENT	{ $$ = binNode(INT_TYPE, intNode(TYPE, INFO_INT), strNode(IDE
 	;
 
 params	:		{ $$ = nilNode(NIL); }
-	| var		{ functionParams($1); }
-     	| params ';' var { $$ = binNode(';', $1, $3); functionParams($3); }
+	| var		{ $$ = binNode(PARAMS, nilNode(NIL), functionParams($1)); }
+     	| params ';' var { $$ = binNode(PARAMS, $1, functionParams($3)); }
 	;
 
 args	: expr		{ $$ = binNode(ARGS, $1, nilNode(NIL)); }
@@ -195,8 +195,8 @@ body	: vars stmts 	{ $$ = binNode(BODY, $1, $2); }
 	;
 				
 array_init
-	: INTEGER	{ $$ = intNode(INTEGER, $1); }
-	| '-' INTEGER	{ $$ = intNode(INTEGER, -$2); }
+	: INTEGER	{ $$ = binNode(INTS, nilNode(NIL), intNode(INTEGER, $1)); }
+	| '-' INTEGER	{ $$ = binNode(INTS, nilNode(NIL), intNode(INTEGER, -$2)); }
 	| array_init ','  INTEGER { $$ = binNode(INTS, $1, intNode(INTEGER, $3)); }
 	| array_init ',' '-' INTEGER { $$ = binNode(INTS, $1, intNode(INTEGER, -$4)); }
 	;
@@ -299,14 +299,16 @@ void enterFunction(long type, char* name) {
 	else if (typeTest > 40 && typeTest-20 == type) {
 		// wait for parameters to verify
 	} else yyerror("name already used");
-	
+
+
+
 	IDpush(); 
 }
 
-void function(char* name, int forward, Node* public,Node* type, Node* body) {
+void function(char* name, int forward, Node* public,Node* type, Node* function) {
 	if(forward == 0) {
 		defineFunction(type->value.i+20+public->info, name);
-		burgFunction(name, -fPos, public, type, body); 
+		burgFunction(name, -fPos, public, type, function); 
 	} else {
 		forwardFunction(name);
 	}
@@ -332,16 +334,23 @@ void defineFunction(long type, char* name) {
 	}
 }
 
-void functionParams(Node* n) {
+Node* functionParams(Node* n) {
 	int type = LEFT_CHILD(n)->value.i;
+	fPos += pfWORD;
 	IDnew(type, getArrayName(RIGHT_CHILD(n)), (void*)fPos); 
 	funcArgs[++funcArgs[0]] = type;
-	fPos += pfWORD;
+	return intNode(PARAM, fPos);
 }
 
 Node* variableName(char* name) {
 	Node* node = strNode(IDENT, name);
-	if(IDlevel() != 0) node = intNode(LOCAL, fPos);
+	long pos = 0;
+	int type = IDfind(name, &pos);
+	if(pos != 0 && type < INFO_FUNC_ARRAY) {
+		node = intNode(LOCAL, pos);
+	} else if (type >= INFO_FUNC_ARRAY) {
+		node = strNode(NO_ARG_CALL, name);
+	}
 	return node;
 }
 
@@ -495,9 +504,9 @@ static void arrayAssign(Node* dimNode, Node* initNode) {
 	if (!dimNode->value.i) return; // size not specified
 	if (initNode->attrib == NIL) return;
 	Node* currNode = initNode->SUB(0);
-	int counter = 0, dim = dimNode->value.i;
+	int counter, dim = dimNode->value.i;
 	
-	for (counter = initNode->attrib != NIL; currNode->attrib == INTS; counter++) {
+	for (counter = 0; currNode->attrib == INTS; counter++) {
 		currNode = currNode->SUB(0);
 	}
 	if(counter > dim) {

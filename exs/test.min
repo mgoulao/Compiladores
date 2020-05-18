@@ -1,20 +1,5 @@
 program
-    number x := 3;
-    string s := "abc"
+    array x[5] := 1,2,3,4,5
 start
-    number input;
-
-    input := ?;
-
-    (input + 2) * 3 / 4 - 2 ^ x ^ 2 !
-
-    x := (x & 0) | x & ~input;
-
-    x := input > x;
-
-    -2 <= 3 = 4 >= 5 !
-
-    &x !
-
-    input % x + 1 !
+    x[4]!
 end
