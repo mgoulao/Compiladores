@@ -252,7 +252,7 @@ str_symbol
 	;
 
 expr	: lvalue 	{ $$ = $1; $$->info = $1->info; }
-     	| lvalue ASSIGN expr { $$ = binNode(ASSIGN, $1, $3); $$->info = verifyAssign($1, $3); }
+     	| lvalue ASSIGN expr { $$ = binNode(ASSIGN, $3, $1); $$->info = verifyAssign($1, $3); }
 	| INTEGER 	{ $$ = intNode(INTEGER, $1); $$->info = INFO_INT; }
 	| string 	{ $$->info = INFO_STR; }
 	| CHAR	 	{ $$ = intNode(CHAR, $1); $$->info = INFO_CHAR_LIT; }

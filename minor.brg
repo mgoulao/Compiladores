@@ -40,7 +40,7 @@ static void outCharAndInt(int c) {
 	fprintf(yyout, pfCHAR, c);
 }
 
-static void aggregationStr(Node* string) {
+static void aggregationStrRecur(Node* string) {
 	if(string->attrib == TEXTSTRING && string->value.s != NULL) {
 		outstr(string->value.s);
 		return;
@@ -51,9 +51,13 @@ static void aggregationStr(Node* string) {
 	}
 	Node* leftNode = LEFT_CHILD(string);	
 	Node* rightNode = RIGHT_CHILD(string);	
-	if(leftNode != NULL && leftNode->attrib != NIL) aggregationStr(leftNode);
-	if(rightNode != NULL && rightNode->attrib != NIL) aggregationStr(rightNode);
+	if(leftNode != NULL && leftNode->attrib != NIL) aggregationStrRecur(leftNode);
+	if(rightNode != NULL && rightNode->attrib != NIL) aggregationStrRecur(rightNode);
+}
 
+static void aggregationStr(Node* string) {
+	aggregationStrRecur(string);
+ 	fprintf(yyout, pfCHAR, 0);
 }
 
 void minorPrint(Node* expr) {
@@ -102,7 +106,7 @@ vars:	VAR(var)	1 {   }
 vars: 	VARS(vars, var)	1 {   }
 
 stmt: 	PRINT(expr)	1 { minorPrint(LEFT_CHILD(p)); }
-stmt:	expr
+stmt:	expr		1 { fprintf(yyout, pfTRASH, pfWORD); }
 
 var:	INT_TYPE(TYPE, IDENT)	{   }
 var:	STR_TYPE(TYPE, IDENT)
@@ -197,15 +201,17 @@ return: RETURN(expr)	1 { fprintf(yyout, pfLEAVE pfRET); }
 
 %! lvalues
 expr: lvalue
-lvalue:	INDEX(lvalue, expr) 1 { fprintf(yyout, pfIMM pfMUL pfADD pfLOAD, pfWORD); }
+lvalue:	INDEX(lvalue, expr) 1 { fprintf(yyout, pfIMM pfMUL pfADD, pfWORD); }
 %!lvalue: IDENT		1 { fprintf(yyout, pfLOCAL, p->value.i * (pfWORD/4)); }
 lvalue:	IDENT		1 { fprintf(yyout, pfADDR pfLOAD, p->value.s); }
 lvalue:	LOCAL		1 { fprintf(yyout, pfLOCAL pfLOAD, p->value.i); }
 expr:	ADDR(lvalue)	1 {  }
 
 %! assignment (multiple assignment)
-expr:	ASSIGN(LOCAL, expr)	1 { fprintf(yyout, pfDUP pfLOCA, LEFT_CHILD(p)->value.i); }
-expr:	ASSIGN(IDENT, expr)	1 { fprintf(yyout, pfDUP pfADDRA, LEFT_CHILD(p)->value.s); }
+expr:	ASSIGN(expr, LOCAL)	1 { fprintf(yyout, pfDUP pfLOCA, RIGHT_CHILD(p)->value.i); }
+expr:	ASSIGN(expr, IDENT)	1 { fprintf(yyout, pfDUP pfADDRA, RIGHT_CHILD(p)->value.s); }
+expr:	ASSIGN(assign, lvalue)	1 { fprintf(yyout, pfSTORE);  }
+assign: expr		1 { fprintf(yyout, pfDUP); }
 %! expr:	ADDR			1 { fprintf(yyout, pfADDRV, p->value.s); }
 stmt:	ALOC(lvalue, aloc)  		1 { fprintf(yyout, pfSTORE); }
 aloc:	expr		1 { fprintf(yyout, pfIMM pfMUL pfALLOC pfSP, pfWORD); }
@@ -252,7 +258,7 @@ void variable(char* name, int isConst, Node* vectorSize, Node* init) {
   
   if (init) {
     int type = IDfind(name, NULL);
-    switch (type) {
+    switch (type%10) {
 	case 0: { 
 	  int id = ++lbl;
 	  fprintf(yyout, pfID pfLABEL, mklbl(id), mklbl(id));
@@ -273,8 +279,10 @@ void variable(char* name, int isConst, Node* vectorSize, Node* init) {
 	    break;
 	case 1: fprintf(yyout, pfINTEGER, RIGHT_CHILD(init)->value.i);
 		break;
-	case 2: printf("STRING\n");
-		break;
+	case 2: { int id = ++lbl;
+		fprintf(yyout, pfID pfLABEL, mklbl(id), mklbl(id)); 
+		aggregationStr(RIGHT_CHILD(init));
+		break; }
         //case CTE: fprintf(yyout, pfWORD == 4 ? pfINTEGER : pfLONG, init->CHILD(i)->value.i); break;
 	//case NAME: fprintf(yyout, pfID, init->CHILD(i)->value.s); break;
 	//case STRING: { char *l = mklbl(++lbl);
