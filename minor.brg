@@ -212,8 +212,8 @@ cond:	expr		1 { p->place = ++lbl; fprintf(yyout, pfJZ, mklbl(p->place)); }
 
 %! for loop
 stmt:	FOR(forExprs, forEnd)	1 { brkcnt--; contcnt--; fprintf(yyout, pfJMP pfLABEL, mklbl(LEFT_CHILD(LEFT_CHILD(p))->place+1), mklbl(LEFT_CHILD(p)->place)); }
-forExprs:	FOR_EXPRS(forStart, forCond)	1 { p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJNZ, mklbl(lbl)); }
-forCond:	FOR_EXPRS(expr, FOR_COND)	1 {   }
+forExprs:	FOR_EXPRS(forStart, forCond)	1 { p->place = RIGHT_CHILD(p)->place;  }
+forCond:	FOR_EXPRS(expr, FOR_COND)	1 {  p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJNZ, mklbl(lbl)); }
 forStart:	FOR_EXPRS(expr, FOR_START)	1 { p->place = (contlbl[++contcnt] = ++lbl); int endToStart = ++lbl; fprintf(yyout, pfLABEL, mklbl(endToStart));  }
 forEnd:		FOR_END(forStmts, expr)	1 { }
 forStmts: stmtsAndEnd	1 { fprintf(yyout, pfLABEL, mklbl(contlbl[contcnt])); }
@@ -247,6 +247,20 @@ aloc:	expr		1 { fprintf(yyout, pfIMM pfMUL pfALLOC pfSP, pfWORD); }
 
 
 %! optimizations
+forCond:        FOR_EXPRS(LE(expr, expr), FOR_COND)     1 {  p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJLE, mklbl(lbl)); }
+forCond:        FOR_EXPRS(LT(expr, expr), FOR_COND)     1 {  p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJLT, mklbl(lbl)); }
+forCond:        FOR_EXPRS(GE(expr, expr), FOR_COND)     1 {  p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJGE, mklbl(lbl)); }
+forCond:        FOR_EXPRS(GT(expr, expr), FOR_COND)     1 {  p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJGT, mklbl(lbl)); }
+forCond:        FOR_EXPRS(EQ(expr, expr), FOR_COND)     1 {  p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJEQ, mklbl(lbl)); }
+forCond:        FOR_EXPRS(NE(expr, expr), FOR_COND)	1 {  p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJNE, mklbl(lbl)); }
+cond:	LE(expr, expr)		1 { p->place = ++lbl; fprintf(yyout, pfJGT, mklbl(p->place)); }
+cond:	LT(expr, expr)		1 { p->place = ++lbl; fprintf(yyout, pfJGE, mklbl(p->place)); }
+cond:	GE(expr, expr)		1 { p->place = ++lbl; fprintf(yyout, pfJLT, mklbl(p->place)); }
+cond:	GT(expr, expr)		1 { p->place = ++lbl; fprintf(yyout, pfJLE, mklbl(p->place)); }
+cond:	EQ(expr, expr)		1 { p->place = ++lbl; fprintf(yyout, pfJNE, mklbl(p->place)); }
+cond:	NE(expr, expr)		1 { p->place = ++lbl; fprintf(yyout, pfJEQ, mklbl(p->place)); }
+
+
 
 %%
 #include "y.tab.h"

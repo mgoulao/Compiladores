@@ -15,7 +15,7 @@ start
     if a > b then
       m := b;
     fi
-    for i := 2 until i >= m step i := i + 1 do
+    for i := 2 until i > m step i := i + 1 do
       if a % i = 0 & b % i = 0 then
         d := i;
       fi
