@@ -5,21 +5,10 @@
 #include "node.h"
 #include "tabid.h"
 #include "postfix.h"
+#include "minor.h"
 
 extern int yylex();
 
-#define INFO_ARRAY 0
-#define INFO_INT 1 
-#define INFO_STR 2
-#define INFO_VOID 3
-#define INFO_CHAR_LIT 4
-#define INFO_CONST_ARRAY 10
-#define INFO_CONST_INT 11
-#define INFO_CONST_STR 12
-#define INFO_FUNC_ARRAY 20
-#define INFO_FUNC_INT 21
-#define INFO_FUNC_STR 22
-#define INFO_FUNC_VOID 23
 
 char errmsg[80];
 static long* funcArgs;
@@ -211,7 +200,7 @@ stmt  : IF expr THEN stmts end elifs FI { $$ = binNode(IF_ELIFS, binNode(IF, $2,
 	| FOR expr UNTIL expr STEP expr DO {loopLvl++;} stmts end DONE { $$ = binNode(FOR, binNode(FOR_EXPRS, binNode(FOR_EXPRS, $2, nilNode(FOR_START)), binNode(FOR_EXPRS, $4, nilNode(FOR_COND))), binNode(FOR_END, binNode(STMTS, $9, $10), $6)); nonVoidExpr($2); nonVoidExpr($4);nonVoidExpr($6);} 
 	| expr ';'
 	| expr '!'	{ $$ = uniNode(PRINT, $1); printExpr($1); }
-	| lvalue ALOC  expr ';' { $$ = binNode(ALOC, $1, $3); alocExpr($1, $3); }
+	| lvalue ALOC  expr ';' { $$ = binNode(ALOC, $3, $1); alocExpr($1, $3); }
 	| error ';'
 	;
 
