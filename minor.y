@@ -381,7 +381,7 @@ int intArrayExpr(Node* n1, Node* n2) {
 		yyerror("expression only allows int type or pointer arithmetic");
 	if(n1->info == n2->info)
 		return INFO_INT;
-	return INFO_ARRAY; 
+	return INFO_ARRAY;
 }
 
 int strIntExpr(Node* n1, Node*n2) {
@@ -395,8 +395,8 @@ int strIntExpr(Node* n1, Node*n2) {
 }
 
 void printExpr(Node* n) {
-	if(n->info%10 < INFO_ARRAY || n->info%10 > INFO_STR)
-		yyerror("can only print arrays, strings and intergers");
+	if(n->info != INFO_CHAR_LIT && (n->info%10 < INFO_INT || n->info%10 > INFO_STR))
+		yyerror("can only print strings and intergers");
 }
 
 int verifyArgs(char* name, Node* argsNode){

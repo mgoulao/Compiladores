@@ -1,21 +1,9 @@
-program $$ maior divisor comum entre dois numeros inteiros positivos
+program
+	function public number test do
+		number x;
+		x := 2;
+		return x
 start
-  if 1 < 2 then
-	"yes1"!
-	  if 2 >= 1 then
-	"yes2"!
-
-	  if 2 = 2 then
-	"yes3"!
-  if 2 ~= 1 then
-	"yes4"!
-  fi
-  fi
-
-  fi  
-
-
-  fi  
-
-
+	number a;
+	test!
 end

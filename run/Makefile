@@ -9,10 +9,13 @@ OS=dbl.o linux.o lib.o sys.o
 
 all: $(RUNTIME)
 
-$(RUNTIME): power.o $(OS)
+$(RUNTIME): power.o strcmp.o $(OS)
 	ar crl $@ $?
 
-power.o: power.c
+power.o: power.c 
+	$(CC) $(CFLAGS) -DPOSTFIX -c $<
+
+strcmp.o: strcmp.c
 	$(CC) $(CFLAGS) -DPOSTFIX -c $<
 
 .asm.o:

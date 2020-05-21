@@ -64,7 +64,7 @@ static void aggregationStr(Node* string) {
 }
 
 void minorPrint(Node* expr) {
-	if(expr->info%10 == 1 || expr->info%10 == 0) 
+	if(expr->info%10 == INFO_ARRAY || expr->info%10 == INFO_INT || expr->info == INFO_CHAR_LIT) 
 		fprintf(yyout, pfCALL pfTRASH, "_printi", pfWORD); 
 	else {
 		fprintf(yyout, pfCALL pfTRASH, "_prints", pfWORD); 
@@ -78,19 +78,24 @@ void functionCall(char* name) {
   }
 }
 
-static int intOrString(Node* p){
-  int l=LEFT_CHILD(p)->info %5;
-  int r = RIGHT_CHILD(p)->info %5 ;
-  if(l==2 && r==2) return MAX_COST;
-  return  (l == 1 || l == 2) && (r == 1 || r == 2) ? 1 : MAX_COST; 
-}
-
 static int onlyStr(Node* n) {
   return LEFT_CHILD(n)->info%10 == INFO_STR && RIGHT_CHILD(n)->info%10 == INFO_STR ? 1 : MAX_COST; 
 } 
 
 static int onlyInt(Node* n) {
   return LEFT_CHILD(n)->info%10 == INFO_INT && RIGHT_CHILD(n)->info%10 == INFO_INT ? 1 : MAX_COST;
+}
+
+static int intAndArrayPointer(Node* n) {
+  return ((LEFT_CHILD(n)->info%10 == INFO_INT && 
+	 RIGHT_CHILD(n)->info%10 == INFO_ARRAY) ||
+	 (LEFT_CHILD(n)->info%10 == INFO_ARRAY && 
+	 RIGHT_CHILD(n)->info%10 == INFO_INT)) ? 1 : MAX_COST;
+}
+
+static int onlyArrayPointer(Node* n) {
+  return (LEFT_CHILD(n)->info%10 == INFO_ARRAY && 
+	 RIGHT_CHILD(n)->info%10 == INFO_ARRAY) ? 1 : MAX_COST;
 }
 
 static int exprDimension(int type) {
@@ -157,7 +162,7 @@ expr:   GT(expr, expr)  onlyInt { fprintf(yyout, pfGT); }
 expr:   GE(expr, expr)  onlyInt { fprintf(yyout, pfGE); }
 
 expr:   EQ(expr, expr)  onlyStr {extrnStrcmp=1; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfEQ, "_strcmp", 2 * pfWORD, 0); }
-expr:   NE(expr, expr)  onlyStr {extrnStrcmp==1; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfNE, "_strcmp", 2 * pfWORD, 0); }
+expr:   NE(expr, expr)  onlyStr {extrnStrcmp=1; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfNE, "_strcmp", 2 * pfWORD, 0); }
 expr:   LT(expr, expr)  onlyStr {extrnStrcmp=1; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfLT, "_strcmp", 2 * pfWORD, 0); }
 expr:   LE(expr, expr)  onlyStr {extrnStrcmp=1; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfLE, "_strcmp", 2 * pfWORD, 0); }
 expr:   GT(expr, expr)  onlyStr {extrnStrcmp=1; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfGT, "_strcmp", 2 * pfWORD, 0); }
@@ -178,12 +183,15 @@ expr:	NOT(expr)	1 { fprintf(yyout, pfIMM pfEQ, 0); }
 expr:	NEG(expr)	1 { fprintf(yyout, pfNEG); }
 
 %! expressions int and array
-expr:   ADD(expr,expr)  1 { fprintf(yyout, pfADD); }
-expr:   SUB(expr,expr)  1 { fprintf(yyout, pfSUB); }
-expr:   DIV(expr,expr)  1 { fprintf(yyout, pfDIV); }
-expr:   MOD(expr,expr)  1 { fprintf(yyout, pfMOD); }
+expr:   ADD(expr, expr)  onlyInt { fprintf(yyout, pfADD); }
+expr:   SUB(expr, expr)  onlyInt { fprintf(yyout, pfSUB); }
 
-
+expr:   ADD(lvalue, expr)  intAndArrayPointer { fprintf(yyout, pfADD); }
+expr:   SUB(lvalue, expr)  intAndArrayPointer { fprintf(yyout, pfSUB); }
+expr:   ADD(expr, lvalue)  intAndArrayPointer { fprintf(yyout, pfADD); }
+expr:   SUB(expr, lvalue)  intAndArrayPointer { fprintf(yyout, pfSUB); }
+expr:   ADD(lvalue, lvalue)  onlyArrayPointer { fprintf(yyout, pfADD); }
+expr:   SUB(lvalue, lvalue)  onlyArrayPointer { fprintf(yyout, pfSUB); }
 
 %! call function
 expr:	CALL(IDENT, args)	1 { fprintf(yyout, pfCALL pfTRASH, mkfunc(LEFT_CHILD(p)->value.s), (int)(RIGHT_CHILD(p)->place)); functionCall(LEFT_CHILD(p)->value.s);  }
@@ -194,7 +202,7 @@ expr:	READ		1 { fprintf(yyout, pfCALL pfPUSH, "_readi"); }
 
 args:	ARGS(arg, NIL)	1 { p->place = LEFT_CHILD(p)->place; }
 args:	ARGS(arg, args)	1 { p->place = ((LEFT_CHILD(p)->place)+(RIGHT_CHILD(p)->place));  }
-arg:	expr		1 { p->place = pfWORD; /*TODO change size for array and strings*/ }
+arg:	expr		1 { p->place = pfWORD; }
 
 
 
@@ -246,20 +254,35 @@ stmt:	ALOC(aloc, lvalue)  		1 { fprintf(yyout, pfSTORE); }
 aloc:	expr		1 { fprintf(yyout, pfIMM pfMUL pfALLOC pfSP, pfWORD); }
 
 
-%! optimizations
-forCond:        FOR_EXPRS(LE(expr, expr), FOR_COND)     1 {  p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJLE, mklbl(lbl)); }
-forCond:        FOR_EXPRS(LT(expr, expr), FOR_COND)     1 {  p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJLT, mklbl(lbl)); }
-forCond:        FOR_EXPRS(GE(expr, expr), FOR_COND)     1 {  p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJGE, mklbl(lbl)); }
-forCond:        FOR_EXPRS(GT(expr, expr), FOR_COND)     1 {  p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJGT, mklbl(lbl)); }
-forCond:        FOR_EXPRS(EQ(expr, expr), FOR_COND)     1 {  p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJEQ, mklbl(lbl)); }
-forCond:        FOR_EXPRS(NE(expr, expr), FOR_COND)	1 {  p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJNE, mklbl(lbl)); }
-cond:	LE(expr, expr)		1 { p->place = ++lbl; fprintf(yyout, pfJGT, mklbl(p->place)); }
-cond:	LT(expr, expr)		1 { p->place = ++lbl; fprintf(yyout, pfJGE, mklbl(p->place)); }
-cond:	GE(expr, expr)		1 { p->place = ++lbl; fprintf(yyout, pfJLT, mklbl(p->place)); }
-cond:	GT(expr, expr)		1 { p->place = ++lbl; fprintf(yyout, pfJLE, mklbl(p->place)); }
-cond:	EQ(expr, expr)		1 { p->place = ++lbl; fprintf(yyout, pfJNE, mklbl(p->place)); }
-cond:	NE(expr, expr)		1 { p->place = ++lbl; fprintf(yyout, pfJEQ, mklbl(p->place)); }
-
+%! Optimizations
+%! for int condition
+forCond:        FOR_EXPRS(LE(expr, expr), FOR_COND)     onlyInt { p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJLE, mklbl(lbl)); }
+forCond:        FOR_EXPRS(LT(expr, expr), FOR_COND)     onlyInt { p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJLT, mklbl(lbl)); }
+forCond:        FOR_EXPRS(GE(expr, expr), FOR_COND)     onlyInt { p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJGE, mklbl(lbl)); }
+forCond:        FOR_EXPRS(GT(expr, expr), FOR_COND)     onlyInt { p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJGT, mklbl(lbl)); }
+forCond:        FOR_EXPRS(EQ(expr, expr), FOR_COND)     onlyInt { p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJEQ, mklbl(lbl)); }
+forCond:        FOR_EXPRS(NE(expr, expr), FOR_COND)	onlyInt { p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfJNE, mklbl(lbl)); }
+%! for string condition
+forCond:        FOR_EXPRS(LE(expr, expr), FOR_COND)     onlyStr { p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfCALL pfTRASH pfPUSH pfIMM pfJLE, "_strcmp", 0, 2 * pfWORD, mklbl(lbl)); }
+forCond:        FOR_EXPRS(LT(expr, expr), FOR_COND)     onlyStr { p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfCALL pfTRASH pfPUSH pfIMM pfJLT, "_strcmp", 0, 2 * pfWORD, mklbl(lbl)); }
+forCond:        FOR_EXPRS(GE(expr, expr), FOR_COND)     onlyStr { p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfCALL pfTRASH pfPUSH pfIMM pfJGE, "_strcmp", 0, 2 * pfWORD, mklbl(lbl)); }
+forCond:        FOR_EXPRS(GT(expr, expr), FOR_COND)     onlyStr { p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfCALL pfTRASH pfPUSH pfIMM pfJGT, "_strcmp", 0, 2 * pfWORD, mklbl(lbl)); }
+forCond:        FOR_EXPRS(EQ(expr, expr), FOR_COND)     onlyStr { p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfCALL pfTRASH pfPUSH pfIMM pfJEQ, "_strcmp", 0, 2 * pfWORD, mklbl(lbl)); }
+forCond:        FOR_EXPRS(NE(expr, expr), FOR_COND)	onlyStr { p->place = (brklbl[++brkcnt] = ++lbl); fprintf(yyout, pfCALL pfTRASH pfPUSH pfIMM pfJNE, "_strcmp", 0, 2 * pfWORD, mklbl(lbl)); }
+%! if int condition
+cond:	LE(expr, expr)		onlyInt { p->place = ++lbl; fprintf(yyout, pfJGT, mklbl(p->place)); }
+cond:	LT(expr, expr)		onlyInt { p->place = ++lbl; fprintf(yyout, pfJGE, mklbl(p->place)); }
+cond:	GE(expr, expr)		onlyInt { p->place = ++lbl; fprintf(yyout, pfJLT, mklbl(p->place)); }
+cond:	GT(expr, expr)		onlyInt { p->place = ++lbl; fprintf(yyout, pfJLE, mklbl(p->place)); }
+cond:	EQ(expr, expr)		onlyInt { p->place = ++lbl; fprintf(yyout, pfJNE, mklbl(p->place)); }
+cond:	NE(expr, expr)		onlyInt { p->place = ++lbl; fprintf(yyout, pfJEQ, mklbl(p->place)); }
+%! if string condition
+cond:   EQ(expr, expr)  onlyStr {extrnStrcmp=1; p->place = ++lbl; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfJNE, "_strcmp", 2 * pfWORD, 0, mklbl(p->place)); }
+cond:   NE(expr, expr)  onlyStr {extrnStrcmp=1; p->place = ++lbl; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfJEQ, "_strcmp", 2 * pfWORD, 0, mklbl(p->place)); }
+cond:   LT(expr, expr)  onlyStr {extrnStrcmp=1; p->place = ++lbl; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfJGE, "_strcmp", 2 * pfWORD, 0, mklbl(p->place)); }
+cond:   LE(expr, expr)  onlyStr {extrnStrcmp=1; p->place = ++lbl; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfJGT, "_strcmp", 2 * pfWORD, 0, mklbl(p->place)); }
+cond:   GT(expr, expr)  onlyStr {extrnStrcmp=1; p->place = ++lbl; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfJLE, "_strcmp", 2 * pfWORD, 0, mklbl(p->place)); }
+cond:   GE(expr, expr)  onlyStr {extrnStrcmp=1; p->place = ++lbl; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfJGE, "_strcmp", 2 * pfWORD, 0, mklbl(p->place)); }
 
 
 %%
@@ -294,21 +317,19 @@ void array(Node* arrayNode) {
 
 void variable(char* name, int isConst, Node* vectorSize, Node* init) {
   int i = 0, siz = 1;
+  if(errors) return;
   if (isConst) fprintf(yyout, pfRODATA);
-  fprintf(yyout, pfDATA pfALIGN pfLABEL, name);
-  /*if (vectorSize->type == nodeInt) siz = vectorSize->value.i;
-  if (vectorSize->attrib == INTEGER) {
-    lbl++;
-    fprintf(yyout, pfID pfLABEL, mklbl(lbl), mklbl(lbl));
-  }*/
+  else if (init->attrib == NIL) fprintf(yyout, pfBSS);
+  else fprintf(yyout, pfDATA);
+  fprintf(yyout, pfALIGN pfLABEL, name);
   
-  if (init) {
+  if (init->attrib != NIL) {
     int type = IDfind(name, NULL);
     switch (type%10) {
-	case 0: { 
-	  int id = ++lbl;
+	case INFO_ARRAY: { 
+	  int id = ++lbl, arraySize = 0;
 	  fprintf(yyout, pfID pfLABEL, mklbl(id), mklbl(id));
-	  int arraySize = LEFT_CHILD(RIGHT_CHILD(init))->value.i;
+	  arraySize = LEFT_CHILD(RIGHT_CHILD(init))->value.i;
 	  Node* arrayAssign = RIGHT_CHILD(RIGHT_CHILD(init));
 	  if(arrayAssign->attrib != NIL) {
 	    int i = 0;
@@ -319,30 +340,22 @@ void variable(char* name, int isConst, Node* vectorSize, Node* init) {
  		currNode = LEFT_CHILD(currNode); 
 		i++;  
 	    }
-	    for(i; i < arraySize; i++) fprintf(yyout, pfINTEGER, 0);
-	   }
+	    if (arraySize-i) fprintf(yyout, pfBYTE, 4 * (arraySize - i));
+	   } else if (arraySize) fprintf(yyout, pfBYTE, 4 * arraySize);
 	}
 	    break;
-	case 1: fprintf(yyout, pfINTEGER, RIGHT_CHILD(init)->value.i);
+	case INFO_INT: fprintf(yyout, pfINTEGER, RIGHT_CHILD(init)->value.i);
 		break;
-	case 2: { int id = ++lbl;
+	case INFO_STR: { int id = ++lbl;
 		fprintf(yyout, pfID pfLABEL, mklbl(id), mklbl(id)); 
 		aggregationStr(RIGHT_CHILD(init));
 		break; }
-        //case CTE: fprintf(yyout, pfWORD == 4 ? pfINTEGER : pfLONG, init->CHILD(i)->value.i); break;
-	//case NAME: fprintf(yyout, pfID, init->CHILD(i)->value.s); break;
-	//case STRING: { char *l = mklbl(++lbl);
-	//		fprintf(yyout, pfRODATA pfALIGN pfLABEL, l);
-	//		outstr(init->CHILD(i)->value.s);
-	//		fprintf(yyout, pfDATA pfID, l); break; }
      }
-    //if (i < siz)  fprintf(yyout, pfBYTE, pfWORD * (siz - i));
-  }
-  else fprintf(yyout, pfBYTE, pfWORD * siz);
+  } 
 
-	// remove from extrns
-	for (i = 0; i < extcnt; i++)
-    		if (extrns[i] && strcmp(extrns[i], name) == 0) extrns[i] = 0;
+  // remove from extrns
+  for (i = 0; i < extcnt; i++)
+    if (extrns[i] && strcmp(extrns[i], name) == 0) extrns[i] = 0;
 }
 
 void publicVariable(char* name, Node* public, int isConst, Node* vectorSize, Node* init) {
@@ -376,7 +389,6 @@ void burgFunction(char *name, int enter, Node* public, Node* type, Node *functio
 }
 
 void mainFunction(Node* body, int enter) {
-	printf("EVALUATE MAIN or start-end in minor\n");
 	burgFunction("main", enter, nilNode(NIL), intNode(NUMBER, 1), binNode(FUNCTION, uniNode(FUNC_PARAMS, nilNode(NIL)), body));
 }
 
