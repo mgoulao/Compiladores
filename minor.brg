@@ -98,6 +98,12 @@ static int onlyArrayPointer(Node* n) {
 	 RIGHT_CHILD(n)->info%10 == INFO_ARRAY) ? 1 : MAX_COST;
 }
 
+static int specialZero(Node* n) {
+  return (LEFT_CHILD(n)->value.i == 0 && 
+	 (RIGHT_CHILD(n)->info == INFO_ARRAY ||
+	  RIGHT_CHILD(n)->info == INFO_STR)) ? 1 : MAX_COST;
+}
+
 static int exprDimension(int type) {
   switch(type%10) {
     case INFO_INT:
@@ -236,22 +242,24 @@ return: RETURN(NIL)	1 { fprintf(yyout, pfLEAVE pfRET); }
 return: RETURN(expr)	1 { fprintf(yyout, pfPOP pfLEAVE pfRET); }
 
 %! lvalues
-expr: lvalue		1 { fprintf(yyout, pfLOAD);  }
+expr: 	lvalue		1 { fprintf(yyout, pfLOAD);  }
+expr:	ADDR(lvalue)	1 {  }
 lvalue:	INDEX(lvector, expr) 1 { fprintf(yyout, pfIMM pfMUL pfADD, pfWORD); }
 lvector: lvalue		1 { fprintf(yyout, pfLOAD);  }
 %!lvalue: IDENT		1 { fprintf(yyout, pfLOCAL, p->value.i * (pfWORD/4)); }
 lvalue:	IDENT		1 { fprintf(yyout, pfADDR, p->value.s); }
 lvalue:	LOCAL		1 { fprintf(yyout, pfLOCAL, p->value.i); }
-expr:	ADDR(lvalue)	1 {  }
 
 %! assignment (multiple assignment)
 expr:	ASSIGN(expr, LOCAL)	1 { fprintf(yyout, pfDUP pfLOCA, RIGHT_CHILD(p)->value.i); }
 expr:	ASSIGN(expr, IDENT)	1 { fprintf(yyout, pfDUP pfADDRA, RIGHT_CHILD(p)->value.s); }
 expr:	ASSIGN(assign, lvalue)	1 { fprintf(yyout, pfSTORE);  }
 assign: expr		1 { fprintf(yyout, pfDUP); }
-%! expr:	ADDR			1 { fprintf(yyout, pfADDRV, p->value.s); }
 stmt:	ALOC(aloc, lvalue)  		1 { fprintf(yyout, pfSTORE); }
 aloc:	expr		1 { fprintf(yyout, pfIMM pfMUL pfALLOC pfSP, pfWORD); }
+%! special zero
+%!expr: ASSIGN(INTEGER, LOCAL)	specialZero { fprintf(yyout, pfIMM pfDUP LOCA);  }
+%!expr: ASSIGN(INTEGER, IDENT)	specialZero { fprintf(yyout, );  }
 
 
 %! Optimizations
@@ -328,10 +336,12 @@ void variable(char* name, int isConst, Node* vectorSize, Node* init) {
     switch (type%10) {
 	case INFO_ARRAY: { 
 	  int id = ++lbl, arraySize = 0;
-	  fprintf(yyout, pfID pfLABEL, mklbl(id), mklbl(id));
+	  fprintf(yyout, pfID, mklbl(id));
 	  arraySize = LEFT_CHILD(RIGHT_CHILD(init))->value.i;
 	  Node* arrayAssign = RIGHT_CHILD(RIGHT_CHILD(init));
 	  if(arrayAssign->attrib != NIL) {
+	    if(isConst) fprintf(yyout, pfDATA pfALIGN);
+	    fprintf(yyout, pfLABEL, mklbl(id));
 	    int i = 0;
 	    Node* arrayInit = LEFT_CHILD(arrayAssign);
 	    Node* currNode = arrayInit;
@@ -340,14 +350,17 @@ void variable(char* name, int isConst, Node* vectorSize, Node* init) {
  		currNode = LEFT_CHILD(currNode); 
 		i++;  
 	    }
-	    if (arraySize-i) fprintf(yyout, pfBYTE, 4 * (arraySize - i));
+	    if (arraySize && arraySize-i) fprintf(yyout, pfBYTE, 4 * (arraySize - i));
 	   } else if (arraySize) fprintf(yyout, pfBYTE, 4 * arraySize);
 	}
 	    break;
 	case INFO_INT: fprintf(yyout, pfINTEGER, RIGHT_CHILD(init)->value.i);
 		break;
-	case INFO_STR: { int id = ++lbl;
-		fprintf(yyout, pfID pfLABEL, mklbl(id), mklbl(id)); 
+	case INFO_STR: { 
+		int id = ++lbl;
+		fprintf(yyout, pfID, mklbl(id)); 
+		if(isConst) fprintf(yyout, pfDATA pfALIGN);
+		fprintf(yyout, pfLABEL, mklbl(id));
 		aggregationStr(RIGHT_CHILD(init));
 		break; }
      }

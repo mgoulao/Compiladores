@@ -247,7 +247,7 @@ expr	: lvalue 	{ $$ = $1; $$->info = $1->info; }
 	| CHAR	 	{ $$ = intNode(CHAR, $1); $$->info = INFO_CHAR_LIT; }
 	| '-' expr %prec UMINUS { $$ = uniNode(NEG, $2); $$->info = intOnly($2);}
 	| '?'	 	{ $$ = nilNode('?'); $$->info = INFO_INT; }
-	| '&' lvalue %prec UMINUS { $$ = uniNode(ADDR, $2); $$->info = intOnly($2); }
+	| '&' lvalue %prec UMINUS { $$ = uniNode(ADDR, $2); $$->info = addrExpr($2); }
 	| '~' expr	{ $$ = uniNode('~', $2); $$->info = intOnly($2);}
 	| expr '+' expr	{ $$ = binNode('+', $1, $3); $$->info = intArrayExpr($1, $3); }
 	| expr '-' expr	{ $$ = binNode('-', $1, $3);  $$->info = intArrayExpr($1, $3);}
@@ -288,8 +288,6 @@ void enterFunction(long type, char* name) {
 	else if (typeTest > 40 && typeTest-20 == type) {
 		// wait for parameters to verify
 	} else yyerror("name already used");
-
-
 
 	IDpush(); 
 }
@@ -361,8 +359,14 @@ int verifyAssign(Node* lvNode, Node* valNode) {
 int intOnly(Node* n) {
 	n->info = castCharToInt(n);
 	if(n->info%10 != INFO_INT)
-		yyerror("int only");
+		yyerror("int only expression");
 	return INFO_INT;
+}
+
+int addrExpr(Node* n) {
+	if(n->info%10 != INFO_INT)
+		yyerror("can not take '&' of non-number");
+	return INFO_ARRAY;
 }
 
 int intExpr(Node* n1, Node* n2) {
@@ -395,8 +399,8 @@ int strIntExpr(Node* n1, Node*n2) {
 }
 
 void printExpr(Node* n) {
-	if(n->info != INFO_CHAR_LIT && (n->info%10 < INFO_INT || n->info%10 > INFO_STR))
-		yyerror("can only print strings and intergers");
+	if(n->info != INFO_CHAR_LIT && (n->info%10 < INFO_ARRAY || n->info%10 > INFO_STR))
+		yyerror("can only print array pointers, strings and intergers");
 }
 
 int verifyArgs(char* name, Node* argsNode){

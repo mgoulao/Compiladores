@@ -1,7 +1,5 @@
 program
-	function number bigger number x; number y do
-		y!
-		return x+y
+	string s := "hello\n"
 start
-	bigger(2,3)!
+	&s[0]!
 end
