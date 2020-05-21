@@ -332,7 +332,7 @@ Node* functionParams(Node* n) {
 Node* variableName(char* name) {
 	Node* node = strNode(IDENT, name);
 	long pos = 0;
-	int type = IDfind(name, &pos);
+	int type = IDfind(name, (void*)&pos);
 	if(pos != 0 && type < INFO_FUNC_ARRAY) {
 		node = intNode(LOCAL, pos);
 	} else if (type >= INFO_FUNC_ARRAY) {

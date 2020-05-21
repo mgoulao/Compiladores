@@ -104,6 +104,21 @@ static int specialZero(Node* n) {
 	  RIGHT_CHILD(n)->info == INFO_STR)) ? 1 : MAX_COST;
 }
 
+static int numericPointer(Node* n) {
+  return (LEFT_CHILD(n)->info%10 == INFO_INT && 
+	 RIGHT_CHILD(n)->info%10 == INFO_ARRAY) ? 1 : MAX_COST;
+}
+
+static int pointerNumeric(Node* n) {
+  return (LEFT_CHILD(n)->info%10 == INFO_ARRAY && 
+	 RIGHT_CHILD(n)->info%10 == INFO_INT) ? 1 : MAX_COST;
+}
+
+static int pointerPointer(Node* n) {
+  return (LEFT_CHILD(n)->info%10 == INFO_ARRAY && 
+	 RIGHT_CHILD(n)->info%10 == INFO_ARRAY) ? 1 : MAX_COST;
+}
+
 static int exprDimension(int type) {
   switch(type%10) {
     case INFO_INT:
@@ -192,12 +207,14 @@ expr:	NEG(expr)	1 { fprintf(yyout, pfNEG); }
 expr:   ADD(expr, expr)  onlyInt { fprintf(yyout, pfADD); }
 expr:   SUB(expr, expr)  onlyInt { fprintf(yyout, pfSUB); }
 
-expr:   ADD(lvalue, expr)  intAndArrayPointer { fprintf(yyout, pfADD); }
-expr:   SUB(lvalue, expr)  intAndArrayPointer { fprintf(yyout, pfSUB); }
-expr:   ADD(expr, lvalue)  intAndArrayPointer { fprintf(yyout, pfADD); }
-expr:   SUB(expr, lvalue)  intAndArrayPointer { fprintf(yyout, pfSUB); }
-expr:   ADD(lvalue, lvalue)  onlyArrayPointer { fprintf(yyout, pfADD); }
-expr:   SUB(lvalue, lvalue)  onlyArrayPointer { fprintf(yyout, pfSUB); }
+expr:   ADD(pointer, numeric)  pointerNumeric { fprintf(yyout, pfADD); }
+expr:   SUB(pointer, numeric)  pointerNumeric { fprintf(yyout, pfSUB); }
+expr:   ADD(numeric, pointer)  numericPointer { fprintf(yyout, pfADD); }
+expr:   SUB(numeric, pointer)  numericPointer { fprintf(yyout, pfSUB); }
+expr:   ADD(pointer, pointer)  pointerPointer { fprintf(yyout, pfADD); }
+expr:   SUB(pointer, pointer)  pointerPointer { fprintf(yyout, pfSUB); }
+pointer: expr 		1 { }
+numeric: expr		1 { fprintf(yyout, pfIMM pfMUL, pfWORD); }
 
 %! call function
 expr:	CALL(IDENT, args)	1 { fprintf(yyout, pfCALL pfTRASH, mkfunc(LEFT_CHILD(p)->value.s), (int)(RIGHT_CHILD(p)->place)); functionCall(LEFT_CHILD(p)->value.s);  }
@@ -250,6 +267,7 @@ lvector: lvalue		1 { fprintf(yyout, pfLOAD);  }
 lvalue:	IDENT		1 { fprintf(yyout, pfADDR, p->value.s); }
 lvalue:	LOCAL		1 { fprintf(yyout, pfLOCAL, p->value.i); }
 
+
 %! assignment (multiple assignment)
 expr:	ASSIGN(expr, LOCAL)	1 { fprintf(yyout, pfDUP pfLOCA, RIGHT_CHILD(p)->value.i); }
 expr:	ASSIGN(expr, IDENT)	1 { fprintf(yyout, pfDUP pfADDRA, RIGHT_CHILD(p)->value.s); }
@@ -290,7 +308,7 @@ cond:   NE(expr, expr)  onlyStr {extrnStrcmp=1; p->place = ++lbl; fprintf(yyout,
 cond:   LT(expr, expr)  onlyStr {extrnStrcmp=1; p->place = ++lbl; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfJGE, "_strcmp", 2 * pfWORD, 0, mklbl(p->place)); }
 cond:   LE(expr, expr)  onlyStr {extrnStrcmp=1; p->place = ++lbl; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfJGT, "_strcmp", 2 * pfWORD, 0, mklbl(p->place)); }
 cond:   GT(expr, expr)  onlyStr {extrnStrcmp=1; p->place = ++lbl; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfJLE, "_strcmp", 2 * pfWORD, 0, mklbl(p->place)); }
-cond:   GE(expr, expr)  onlyStr {extrnStrcmp=1; p->place = ++lbl; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfJGE, "_strcmp", 2 * pfWORD, 0, mklbl(p->place)); }
+cond:   GE(expr, expr)  onlyStr {extrnStrcmp=1; p->place = ++lbl; fprintf(yyout,pfCALL pfTRASH pfPUSH pfIMM pfJLT, "_strcmp", 2 * pfWORD, 0, mklbl(p->place)); }
 
 
 %%
@@ -351,7 +369,7 @@ void variable(char* name, int isConst, Node* vectorSize, Node* init) {
 		i++;  
 	    }
 	    if (arraySize && arraySize-i) fprintf(yyout, pfBYTE, 4 * (arraySize - i));
-	   } else if (arraySize) fprintf(yyout, pfBYTE, 4 * arraySize);
+	   } else if (arraySize) fprintf(yyout, pfLABEL pfBYTE, mklbl(id), 4 * arraySize);
 	}
 	    break;
 	case INFO_INT: fprintf(yyout, pfINTEGER, RIGHT_CHILD(init)->value.i);
@@ -394,6 +412,8 @@ void burgFunction(char *name, int enter, Node* public, Node* type, Node *functio
   fflush(stdout);
   fprintf(yyout, pfTEXT pfALIGN pfGLOBL pfLABEL pfENTER, mkfunc(name), pfFUNC, mkfunc(name), enter * (pfWORD/4));
   yyselect(function);
+  if(strcmp("main", name) == 0)
+    fprintf(yyout, pfIMM pfPOP, 0);
   fprintf(yyout, pfLEAVE pfRET);
   freeNode(function);
   for (i = 0; i < extcnt; i++)

@@ -7,7 +7,7 @@ int strcmp(char* l, char* r) {
 	while (l[i] == r[i] && r[i] != '\0')
 		i++;
 
-	if(l[i] < r[i]) return -1;
-	else if (l[i] > r[i]) return 1;
+	if(r[i] < l[i]) return -1;
+	else if (r[i] > l[i]) return 1;
 	return 0;
 }

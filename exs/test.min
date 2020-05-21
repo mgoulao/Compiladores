@@ -1,5 +1,14 @@
 program
-	string s := "hello\n"
+    array z[10] := 1, 2, 3, 4, 5
 start
-	&s[0]!
+    array x;
+
+    x := z + 1;
+    x[0]! "\n"!
+
+    x := (3 + (z + 1));
+    x[0]! "\n"!
+
+    x := ((z + 2) - 1);
+    x[0]! "\n"!
 end
