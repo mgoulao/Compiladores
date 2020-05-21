@@ -7,43 +7,29 @@ NASM=nasm -felf32
 LD=ld -m elf_i386 # 32-bit binaries in a 64-bit system
 #LD=ld
 
-SRC= ack.min fib.min hello.min isbn10.min div.min find.min \
-     histograma.min test.min gcd.min \
-     fact.min hanoi.min hondt.min
+ALL= 01ok.o 02ok.o 03ok.o 04ok.o 05ok 06ok 07ok 08ok 09ok \
+     10ok 11ok 12ok 13ok 14ok 16ok 17ok 18ok 19ok 20ok \
+     21ok 22ok 23ok 24ok 25ok 26ok 27ok 28ok 29ok 30ok 31ok \
+     32ok 33ok 34ok 35ok 36ok 37ok 38ok \
+     39ok 40ok 41ok 42ok 45ok 44ok 46ok 49ok \
+     51ok ack fib \
+     hello isbn10 div find  \
+     histograma test gcd \
+     fact hanoi hondt \
 
-EXE=$(SRC:%.min=%)
 
-all: $(EXE)
+
+all::
+	for i in $(ALL); do $(MAKE) $(MFLAGS) $$i; done
+
+fact: fact.o iter.o
+	$(LD) -o $@ $^ $(LDLIBS)
 
 linux32:
 	$(MAKE) $(MFLAGS) NASM="nasm -felf32"
 
-ack: ack.o
-	$(LD) -o $@ $^ $(LDLIBS)
-div: div.o
-	$(LD) -o $@ $^ $(LDLIBS)
-fact: fact.o iter.o
-	$(LD) -o $@ $^ $(LDLIBS)
-fib: fib.o
-	$(LD) -o $@ $^ $(LDLIBS)
-find: find.o
-	$(LD) -o $@ $^ $(LDLIBS)
-gcd: gcd.o
-	$(LD) -o $@ $^ $(LDLIBS)
-hanoi: hanoi.o
-	$(LD) -o $@ $^ $(LDLIBS)
-hello: hello.o
-	$(LD) -o $@ $^ $(LDLIBS)
-histograma: histograma.o
-	$(LD) -o $@ $^ $(LDLIBS)
-hondt: hondt.o
-	$(LD) -o $@ $^ $(LDLIBS)
-isbn10: isbn10.o
-	$(LD) -o $@ $^ $(LDLIBS)
-test: test.o
-	$(LD) -o $@ $^ $(LDLIBS)
-
-
+arm::
+	$(MAKE) $(MFLAGS) AS=as LD=ld
 
 %: %.o
 	$(LD) -o $@ $< $(LDLIBS)
@@ -55,4 +41,4 @@ test: test.o
 	$(COMP) $<
 
 clean:
-	rm -f a.out *~ *.o *.asm *.mine.out $(EXE)
+	rm -f a.out *~ *.o *.asm *.mine.out $(ALL)

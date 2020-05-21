@@ -366,8 +366,7 @@ void publicVariable(char* name, Node* public, int isConst, Node* vectorSize, Nod
 }
 
 void forwardVariable(char* name, int isConst, Node* vectorSize, Node* init) {
- 	fprintf(yyout, pfEXTRN, name);
-	variable(name,  isConst, vectorSize, init);
+	extrns[extcnt++] = dupstr(name);
 }
 
 void forwardFunction(char* name) {

@@ -252,7 +252,7 @@ expr	: lvalue 	{ $$ = $1; $$->info = $1->info; }
 	| expr '+' expr	{ $$ = binNode('+', $1, $3); $$->info = intArrayExpr($1, $3); }
 	| expr '-' expr	{ $$ = binNode('-', $1, $3);  $$->info = intArrayExpr($1, $3);}
 	| expr '*' expr	{ $$ = binNode('*', $1, $3);  $$->info = intExpr($1, $3);}
-	| expr POW expr	{ $$ = binNode(POW, $1, $3);  $$->info = intExpr($1, $3);}
+	| expr POW expr	{ $$ = binNode(POW, $3, $1);  $$->info = intExpr($1, $3);}
 	| expr '/' expr	{ $$ = binNode('/', $1, $3);  $$->info = intExpr($1, $3);}
 	| expr '%' expr	{ $$ = binNode('%', $1, $3);  $$->info = intExpr($1, $3);}
 	| expr '<' expr	{ $$ = binNode('<', $1, $3); $$->info = strIntExpr($1, $3); }

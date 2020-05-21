@@ -8,10 +8,12 @@ make
 
 for arg in $(find . -name "*.min")
 do
-  	${arg%.*} < "${arg%.*}".in > "${arg%.*}".mine.out
-	if cmp -s "${arg%.*}".out "${arg%.*}".mine.out; then
-		echo -e $passed $arg
-	else
-		echo -e $failed $arg
+	if test -f ${arg%.*}; then
+  		${arg%.*} < "${arg%.*}".in > "${arg%.*}".mine.out
+		if cmp -s "${arg%.*}".out "${arg%.*}".mine.out; then
+			echo -e $passed $arg
+		else
+			echo -e $failed $arg
+		fi
 	fi
 done

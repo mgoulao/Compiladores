@@ -1,9 +1,7 @@
 program
-	function public number test do
-		number x;
-		x := 2;
-		return x
+	function number bigger number x; number y do
+		y!
+		return x+y
 start
-	number a;
-	test!
+	bigger(2,3)!
 end
