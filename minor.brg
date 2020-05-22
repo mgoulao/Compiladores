@@ -399,7 +399,7 @@ void variable(char* name, int isConst, Node* vectorSize, Node* init) {
 
 void publicVariable(char* name, Node* public, int isConst, Node* vectorSize, Node* init) {
 	if (public->attrib == PUBLIC) {
-  		fprintf(yyout, pfGLOBL, pfOBJ, name);
+  		fprintf(yyout, pfGLOBL, name, pfOBJ);
 	}
 	variable(name, isConst, vectorSize, init);
 }
