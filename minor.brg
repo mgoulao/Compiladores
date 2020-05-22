@@ -19,7 +19,9 @@ static long contlbl[20], contcnt; /* continue/repeat labels */
 static char *extrns[100]; /* emit externs at the end only */
 static int extcnt;
 
-int extrnPower = 0, extrnStrcmp = 0;
+int extrnPower = 0, extrnStrcmp = 0; /* declare externs only when needed  */
+
+static int isChar = 0; /* manage string's chars load and stores  */
 
 int lbl;
 char *mklbl(int n) {
@@ -49,7 +51,8 @@ static void aggregationStrRecur(Node* string) {
 		return;
 	}
 	if(string->attrib == NUMBER) {
-		outCharAndInt(string->value.i);
+		int value = string->value.i%255;
+		outCharAndInt(value);
 		return;
 	}
 	Node* leftNode = LEFT_CHILD(string);	
@@ -64,11 +67,15 @@ static void aggregationStr(Node* string) {
 }
 
 void minorPrint(Node* expr) {
-	if(expr->info%10 == INFO_ARRAY || expr->info%10 == INFO_INT || expr->info == INFO_CHAR_LIT) 
-		fprintf(yyout, pfCALL pfTRASH, "_printi", pfWORD); 
-	else {
-		fprintf(yyout, pfCALL pfTRASH, "_prints", pfWORD); 
-	}
+  int size = pfWORD;
+  if (isChar) { size = 2; isChar = 0; }
+
+  if(expr->info%10 == INFO_ARRAY || expr->info%10 == INFO_INT || expr->info == INFO_CHAR_LIT) 
+    fprintf(yyout, pfCALL pfTRASH, "_printi", size); 
+  else {
+    fprintf(yyout, pfCALL pfTRASH, "_prints", size); 
+  }
+  isChar = 0; /* dont need to adjust to char size anymore  */
 }
 
 void functionCall(char* name) {
@@ -98,12 +105,6 @@ static int onlyArrayPointer(Node* n) {
 	 RIGHT_CHILD(n)->info%10 == INFO_ARRAY) ? 1 : MAX_COST;
 }
 
-static int specialZero(Node* n) {
-  return (LEFT_CHILD(n)->value.i == 0 && 
-	 (RIGHT_CHILD(n)->info == INFO_ARRAY ||
-	  RIGHT_CHILD(n)->info == INFO_STR)) ? 1 : MAX_COST;
-}
-
 static int numericPointer(Node* n) {
   return (LEFT_CHILD(n)->info%10 == INFO_INT && 
 	 RIGHT_CHILD(n)->info%10 == INFO_ARRAY) ? 1 : MAX_COST;
@@ -119,7 +120,9 @@ static int pointerPointer(Node* n) {
 	 RIGHT_CHILD(n)->info%10 == INFO_ARRAY) ? 1 : MAX_COST;
 }
 
-static int exprDimension(int type) {
+static int exprDimension(int type) { 
+  /* dont need to adjust to char size anymore  */
+  if(isChar) { isChar = 0; return 2;}
   switch(type%10) {
     case INFO_INT:
     case INFO_STR:
@@ -128,6 +131,14 @@ static int exprDimension(int type) {
     case INFO_VOID:
 	return 0;
   }
+}
+
+static void lvalueIndex(Node* n) {
+  if(n->info%10 == INFO_STR) {
+    fprintf(yyout, pfADD);
+    isChar = 1;
+  } else 
+    fprintf(yyout, pfIMM pfMUL pfADD, pfWORD);
 }
 
 #define TRACE
@@ -156,9 +167,10 @@ vars: 	VARS(vars, var)	1 {   }
 stmt: 	PRINT(expr)	1 { minorPrint(LEFT_CHILD(p)); }
 stmt:	expr		1 { int size = exprDimension(p->info); if(size) fprintf(yyout, pfTRASH, size); }
 
-var:	INT_TYPE(TYPE, IDENT)	{   }
-var:	STR_TYPE(TYPE, IDENT)
-var:	ARR_TYPE(TYPE, IDENT)
+var:	INT_TYPE(TYPE, IDENT)	1 {   }
+var:	STR_TYPE(TYPE, IDENT)	1
+var:	ARR_TYPE(TYPE, IDENT)	1
+var:	ARRAY(TYPE, DIM(INTEGER, IDENT)) 1 { long pos = 0; IDfind(RIGHT_CHILD(RIGHT_CHILD(p))->value.s, (void*)&pos); fprintf(yyout, pfIMM pfIMM pfMUL pfALLOC pfSP pfLOCAL pfSTORE, LEFT_CHILD(RIGHT_CHILD(p))->value.i, pfWORD, (int)pos); }
 
 %!type:	NUMBER	1 {}
 %!type:	STRING 	1 {}
@@ -171,7 +183,7 @@ stmts: 	STMTS(stmts, stmt)
 
 %! types
 expr:	INTEGER		1 { fprintf(yyout, pfIMM, p->value.i);  }
-expr:	STRING		1 { lbl++; fprintf(yyout, pfRODATA pfALIGN pfLABEL, mklbl(lbl)); aggregationStr(p); fprintf(yyout, pfCHAR, 0); fprintf(yyout, pfTEXT pfADDR, mklbl(lbl));  }
+expr:	STRING		1 { lbl++; fprintf(yyout, pfRODATA pfALIGN pfLABEL, mklbl(lbl)); aggregationStr(p); fprintf(yyout, pfTEXT pfADDR, mklbl(lbl));  }
 expr:	CHAR		1 { fprintf(yyout, pfIMM, p->value.i); }
 
 %! expressions string and int
@@ -259,25 +271,21 @@ return: RETURN(NIL)	1 { fprintf(yyout, pfLEAVE pfRET); }
 return: RETURN(expr)	1 { fprintf(yyout, pfPOP pfLEAVE pfRET); }
 
 %! lvalues
-expr: 	lvalue		1 { fprintf(yyout, pfLOAD);  }
-expr:	ADDR(lvalue)	1 {  }
-lvalue:	INDEX(lvector, expr) 1 { fprintf(yyout, pfIMM pfMUL pfADD, pfWORD); }
+expr: 	lvalue		1 { if(isChar){ fprintf(yyout, pfLDCHR); } else fprintf(yyout, pfLOAD);  }
+expr:	ADDR(lvalue)	1 { isChar = 0; /* do nothing */  }
+lvalue:	INDEX(lvector, expr) 1 { lvalueIndex(LEFT_CHILD(p)); }
 lvector: lvalue		1 { fprintf(yyout, pfLOAD);  }
-%!lvalue: IDENT		1 { fprintf(yyout, pfLOCAL, p->value.i * (pfWORD/4)); }
 lvalue:	IDENT		1 { fprintf(yyout, pfADDR, p->value.s); }
 lvalue:	LOCAL		1 { fprintf(yyout, pfLOCAL, p->value.i); }
 
 
 %! assignment (multiple assignment)
-expr:	ASSIGN(expr, LOCAL)	1 { fprintf(yyout, pfDUP pfLOCA, RIGHT_CHILD(p)->value.i); }
+expr:	ASSIGN(expr, LOCAL)	1 {  fprintf(yyout, pfDUP pfLOCA, RIGHT_CHILD(p)->value.i); }
 expr:	ASSIGN(expr, IDENT)	1 { fprintf(yyout, pfDUP pfADDRA, RIGHT_CHILD(p)->value.s); }
-expr:	ASSIGN(assign, lvalue)	1 { fprintf(yyout, pfSTORE);  }
+expr:	ASSIGN(assign, lvalue)	1 { if(isChar) { fprintf(yyout, pfSTCHR);} else { fprintf(yyout, pfSTORE);}  }
 assign: expr		1 { fprintf(yyout, pfDUP); }
 stmt:	ALOC(aloc, lvalue)  		1 { fprintf(yyout, pfSTORE); }
 aloc:	expr		1 { fprintf(yyout, pfIMM pfMUL pfALLOC pfSP, pfWORD); }
-%! special zero
-%!expr: ASSIGN(INTEGER, LOCAL)	specialZero { fprintf(yyout, pfIMM pfDUP LOCA);  }
-%!expr: ASSIGN(INTEGER, IDENT)	specialZero { fprintf(yyout, );  }
 
 
 %! Optimizations
