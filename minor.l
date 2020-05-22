@@ -1,12 +1,13 @@
 %{ 
-#include <stdlib.h> 
+#include <stdlib.h>
+#include <limits.h>
 #include <string.h> 
-#include <errno.h>
 #include "node.h" 
 #include "y.tab.h" 
 char errmsg[80];
 char* dupstr(const char *s);
 extern void yyerror(const char *msg);
+int integerConvertion(char* s);
 void reservedWordError(char* word);
 int hasStarted = 0, charRead = 0, strSize = 0;
 %} 
@@ -92,10 +93,10 @@ CHAR_HEX \\[0-9A-Fa-f][0-9A-Fa-f]?
 <CT>\\.			yyerror("invalid escape sequence in string");
 <CT>.|\n		strcat(yylval.s, yytext);
 
-0{O}+                   { errno = 0; int val = strtol(yytext+1, 0, 8); if(errno == ERANGE || val < 0) yyerror("number overflow"); yylval.i = val; return INTEGER; }
-{D}+			{ errno = 0; int val = strtol(yytext, 0, 10); if(errno == ERANGE || val < 0) yyerror("number overflow"); yylval.i = val; return INTEGER; } 
-"0x"{H}+		{ errno = 0; int val = strtol(yytext+2, 0, 16); if(errno == ERANGE || val < 0) yyerror("number overflow"); yylval.i = val; return INTEGER; }
-"0b"{B}+		{ errno = 0; int val = strtol(yytext+2, 0, 2); if(errno == ERANGE || val < 0) yyerror("number overflow"); yylval.i = val; return INTEGER; }
+0{O}+                   { yylval.i = integerConvertion(yytext); return INTEGER; }
+{D}+			{ yylval.i = integerConvertion(yytext); return INTEGER; } 
+"0x"{H}+		{ yylval.i = integerConvertion(yytext); return INTEGER; }
+"0b"{B}+		{ yylval.i = integerConvertion(yytext); return INTEGER; }
 
 
 
@@ -111,6 +112,26 @@ int yywrap(void) {
 	return 1;
 } 
 char *getyytext() { return yytext; }
+
+
+int integerConvertion(char* s) {
+	// based on teacher's itermediate solution
+	char* end;
+	unsigned long ret;
+	if (strlen(s) > 1 && s[1] == 'b')
+		ret = strtoul(s+2, &end, 2);
+	else
+		ret = strtoul(s, &end, 0);
+	if (*end != 0) {
+		yyerror("conversion error in literal integer");
+		return -1;
+	}
+	if (ret > INT_MAX) {
+		yyerror("overflow in literal integer");
+		return -1;
+	}
+	return ret;
+}
 
 void reservedWordError(char* word) {
 	const char* format = "\"%s\" is a reserved word" ;

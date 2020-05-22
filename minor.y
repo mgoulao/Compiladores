@@ -139,7 +139,7 @@ const_initializer
 	;
 
 function: FUNCTION FORWARD type IDENT { enterFunction($3->value.i+40, $4); } params DONE { $$ = uniNode(FUNCTION, binNode(';', binNode(';', nilNode(FORWARD), $3), binNode('(', strNode(IDENT, $4), $6))); function($4, 1, nilNode(NIL), $3, nilNode(NIL)); }
-       	| FUNCTION public type IDENT { enterFunction($3->value.i+20+$2->info, $4); currRetType = $3->value.i; fPos = pfWORD; } params { fPos = 0; } DO body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode(BODY, $9 ,$10)); function($4, 0, $2, $3, binNode(FUNCTION, uniNode(FUNC_PARAMS, $6), binNode(BODY, $9, $10)));  }
+       	| FUNCTION public type IDENT { enterFunction($3->value.i+20+$2->info, $4); currRetType = $3->value.i; fPos = pfWORD; } params { fPos = 0; } DO body return { $$ = binNode(FUNCTION, binNode(';', binNode(';', $2, $3), binNode('(', strNode(IDENT, $4), $6)), binNode(BODY, $9 ,$10)); function($4, 0, $2, $3, binNode(BODY, $9, $10));  }
 	;
 
 var	: NUMBER IDENT	{ $$ = binNode(INT_TYPE, intNode(TYPE, INFO_INT), strNode(IDENT, $2)); }
@@ -249,7 +249,7 @@ expr	: lvalue 	{ $$ = $1; $$->info = $1->info; }
 	| '?'	 	{ $$ = nilNode('?'); $$->info = INFO_INT; }
 	| '&' lvalue %prec UMINUS { $$ = uniNode(ADDR, $2); $$->info = addrExpr($2); }
 	| '~' expr	{ $$ = uniNode('~', $2); $$->info = intOnly($2);}
-	| expr '+' expr	{ $$ = binNode('+', $1, $3); $$->info = intArrayExpr($1, $3); }
+	| expr '+' expr	{ $$ = binNode('+', $1, $3); $$->info = intArrayPointerExpr($1, $3); }
 	| expr '-' expr	{ $$ = binNode('-', $1, $3);  $$->info = intArrayExpr($1, $3);}
 	| expr '*' expr	{ $$ = binNode('*', $1, $3);  $$->info = intExpr($1, $3);}
 	| expr POW expr	{ $$ = binNode(POW, $3, $1);  $$->info = intExpr($1, $3);}
@@ -292,10 +292,10 @@ void enterFunction(long type, char* name) {
 	IDpush(); 
 }
 
-void function(char* name, int forward, Node* public,Node* type, Node* function) {
+void function(char* name, int forward, Node* public,Node* type, Node* body) {
 	if(forward == 0) {
 		defineFunction(type->value.i+20+public->info, name);
-		burgFunction(name, -fPos, public, type, function); 
+		burgFunction(name, -fPos, public, type, body); 
 	} else {
 		forwardFunction(name);
 	}
@@ -386,6 +386,15 @@ int intArrayExpr(Node* n1, Node* n2) {
 	if(n1->info == n2->info)
 		return INFO_INT;
 	return INFO_ARRAY;
+}
+
+int intArrayPointerExpr(Node* n1, Node* n2) {
+	
+	if(n1->info == INFO_ARRAY && n2->info == INFO_ARRAY &&
+	((n1->attrib == LOCAL || n1->attrib == IDENT) 
+	&& (n2->attrib == LOCAL || n2->attrib == IDENT)))
+		yyerror("invalid operator for the types array and array");
+	return intArrayExpr(n1, n2);
 }
 
 int strIntExpr(Node* n1, Node*n2) {
