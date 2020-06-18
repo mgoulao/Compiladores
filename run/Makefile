@@ -1,5 +1,6 @@
 .SUFFIXES: .asm
 LIB=minor
+MIN=../minor
 CC=gcc -m32 # produce elf32 code in 64-bit machines
 CFLAGS=-g -Dunderscore -fno-stack-protector # when __stack_chk_fail in Ubuntu
 RUNTIME=lib$(LIB).a # stand-alone runtime
@@ -9,8 +10,12 @@ OS=dbl.o linux.o lib.o sys.o
 
 all: $(RUNTIME)
 
-$(RUNTIME): power.o strcmp.o $(OS)
+$(RUNTIME): exemplo.o power.o strcmp.o $(OS)
 	ar crl $@ $?
+
+exemplo.o: exemplo.min
+	$(MIN) $<
+	$(AS) $*.asm
 
 power.o: power.c 
 	$(CC) $(CFLAGS) -DPOSTFIX -c $<

@@ -204,6 +204,7 @@ expr:	AND(and, expr)	1 { fprintf(yyout, pfLABEL, mklbl(LEFT_CHILD(p)->place));  
 and:	expr		1 { p->place = ++lbl; fprintf(yyout, pfDUP pfJZ pfTRASH, mklbl(p->place), pfWORD); }
 expr:	OR(or, expr)	1 { fprintf(yyout, pfLABEL, mklbl(LEFT_CHILD(p)->place));  }
 or:	expr		1 { p->place = ++lbl; fprintf(yyout, pfDUP pfJNZ pfTRASH, mklbl(p->place), pfWORD);  }
+expr:	XOR(expr, expr) 1 { fprintf(yyout, pfXOR); }
 
 expr:	NOT(expr)	1 { fprintf(yyout, pfIMM pfEQ, 0); }
 expr:	NEG(expr)	1 { fprintf(yyout, pfNEG); }
@@ -243,6 +244,8 @@ elifs:	ELIFS(elif, elifs)	1 { p->place = RIGHT_CHILD(p)->place; fprintf(yyout, p
 elif: ELIF(cond, stmtsAndEnd)	1 { p->place = ++lbl; fprintf(yyout, pfJMP pfLABEL, mklbl(p->place), mklbl(LEFT_CHILD(p)->place)); }
 cond:	expr		1 { p->place = ++lbl; fprintf(yyout, pfJZ, mklbl(p->place)); }
 
+%! assert
+stmt: ASSERT(expr, STRING)	1 { int l = ++lbl; fprintf(yyout, pfJNZ, mklbl(l)); outstr(RIGHT_CHILD(p)->value.s); fprintf(yyout, pfLABEL, mklbl(l)); }
 
 
 %! for loop
@@ -362,11 +365,13 @@ void variable(char* name, int isConst, Node* vectorSize, Node* init) {
 	    fprintf(yyout, pfLABEL, mklbl(id));
 	    int i = 0;
 	    Node* arrayInit = LEFT_CHILD(arrayAssign);
-	    Node* currNode = arrayInit;
-	    array(currNode);
-	    while (currNode->attrib != NIL) {
- 		currNode = LEFT_CHILD(currNode); 
-		i++;  
+	    if(arrayInit) {
+	      Node* currNode = arrayInit;
+	      array(currNode);
+	      while (currNode->attrib != NIL) {
+ 		  currNode = LEFT_CHILD(currNode); 
+	  	  i++;  
+	      }
 	    }
 	    if (arraySize && arraySize-i) fprintf(yyout, pfBYTE, 4 * (arraySize - i));
 	   } else if (arraySize) fprintf(yyout, pfLABEL pfBYTE, mklbl(id), 4 * arraySize);

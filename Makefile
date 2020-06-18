@@ -24,18 +24,6 @@ $(LANG): $(LANG).y $(LANG).l $(LANG).brg $(LANG).h
 examples:: $(LANG)
 	make -C $(EXS)
 
-temp:: $(LANG).y $(LANG).l
-	make -C $(LIB)
-	byacc -dv $(LANG).y
-	flex -dl $(LANG).l
-	$(LINK.c) -o $(LANG) $(ARCH) -I$(LIB) lex.yy.c y.tab.c -L$(LIB) -l$(UTIL)
-
-testLex:: testLex.y $(LANG).l
-	byacc -dv testLex.y
-	flex -dl $(LANG).l
-	$(CC) -g -o $(LANG) lex.yy.c y.tab.c
-
-
 run:: $(LANG)
 	make -C $(EXS) run
 
@@ -46,5 +34,4 @@ run:: $(LANG)
 clean::
 	make -C $(LIB) clean
 	make -C $(RUN) clean
-	make -C $(EXS) clean
 	rm -f a.out *.o $(LANG) lib$(LANG).a lex.yy.c y.tab.c y.tab.h y.output yyselect.c *.asm *~

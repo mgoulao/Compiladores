@@ -1,3 +1,3 @@
 module
-public const number x := 0
+    public const array x[10]
 end

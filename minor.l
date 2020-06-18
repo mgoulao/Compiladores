@@ -66,7 +66,8 @@ CHAR_HEX \\[0-9A-Fa-f][0-9A-Fa-f]?
 "repeat"		return REPEAT;
 "stop"			return STOP;
 "return"		return RETURN;
-
+"assert"		return ASSERT;
+"xor"			return XOR;
 
 [a-zA-Z][a-zA-Z0-9_]*	yylval.s = dupstr(yytext); return IDENT;
 

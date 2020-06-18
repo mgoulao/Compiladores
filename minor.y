@@ -8,7 +8,7 @@
 #include "minor.h"
 
 extern int yylex();
-
+extern int yylineno;
 
 char errmsg[80];
 static long* funcArgs;
@@ -54,7 +54,7 @@ void defineFunction(long type, char* name);
 %token <i> INTEGER CHAR
 %token <s> IDENT TEXTSTRING
 %token MODULE PROGRAM START END VOID CONST NUMBER ARRAY STRING FUNCTION ALOC 
-%token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN 
+%token PUBLIC FORWARD IF THEN ELSE ELIF FI FOR UNTIL STEP DO DONE REPEAT STOP RETURN XOR ASSERT 
 
 // AST Tokens
 %token START_FILE BODY TYPE STMTS NIL STRING_ELEM PARAMS PARAM DECLS ARGS VAR VARS INTS INDEX FOR_EXPRS IF_ELIFS INT_TYPE STR_TYPE ARR_TYPE NEG PRINT ADDR FBODY LOCAL ELIFS FOR_START FOR_COND FOR_END FUNC_PARAMS NO_ARG_CALL
@@ -66,6 +66,7 @@ void defineFunction(long type, char* name);
 %left '|'
 %left '&'
 %nonassoc '~' '?'
+%right XOR
 %left '=' NE
 %left GE LE '<' '>'
 %left '+' '-'
@@ -133,7 +134,7 @@ string_assign
 	; 
 
 const_initializer
-	: CONST ARRAY IDENT ASSIGN array_size array_init { $$ = binNode(ASSIGN, strNode(IDENT, $3), binNode('[', $5, uniNode(ARRAY, $6)));  int type = INFO_CONST_ARRAY; IDnew(type, $3, 0); }
+	: CONST ARRAY IDENT array_size array_assign { $$ = binNode(ASSIGN, strNode(IDENT, $3), binNode('[', $4, uniNode(ARRAY, $5->SUB(0))));  int type = INFO_CONST_ARRAY; IDnew(type, $3, 0); }
  	| CONST NUMBER IDENT ASSIGN intOrChar { $$ = binNode(ASSIGN, strNode(IDENT, $3), $5); int type = INFO_CONST_INT; IDnew(type, $3, 0); }
 	| CONST STRING IDENT ASSIGN string { $$ = binNode(ASSIGN, strNode(IDENT, $3), uniNode(STRING, $5)); int type = INFO_CONST_STR; IDnew(type, $3, 0); } 
 	;
@@ -201,6 +202,7 @@ stmt  : IF expr THEN stmts end elifs FI { $$ = binNode(IF_ELIFS, binNode(IF, $2,
 	| expr ';'
 	| expr '!'	{ $$ = uniNode(PRINT, $1); printExpr($1); }
 	| lvalue ALOC  expr ';' { $$ = binNode(ALOC, $3, $1); alocExpr($1, $3); }
+	| ASSERT expr ';'	{ $$ = binNode(ASSERT, $2, strNode(STRING, assertMessage(yylineno))); }
 	| error ';'
 	;
 
@@ -255,6 +257,7 @@ expr	: lvalue 	{ $$ = $1; $$->info = $1->info; }
 	| expr POW expr	{ $$ = binNode(POW, $3, $1);  $$->info = intExpr($1, $3);}
 	| expr '/' expr	{ $$ = binNode('/', $1, $3);  $$->info = intExpr($1, $3);}
 	| expr '%' expr	{ $$ = binNode('%', $1, $3);  $$->info = intExpr($1, $3);}
+	| expr XOR expr	{ $$ = binNode(XOR, $1, $3);  $$->info = intExpr($1, $3);}
 	| expr '<' expr	{ $$ = binNode('<', $1, $3); $$->info = strIntExpr($1, $3); }
 	| expr '>' expr	{ $$ = binNode('>', $1, $3); $$->info = strIntExpr($1, $3);}
 	| expr GE expr	{ $$ = binNode(GE, $1, $3); $$->info = strIntExpr($1, $3);}
@@ -300,6 +303,13 @@ void function(char* name, int forward, Node* public,Node* type, Node* body) {
 		forwardFunction(name);
 	}
 	IDpop();
+}
+
+char* assertMessage(int line) {
+	char *s = malloc(30* sizeof(char)); 
+	char* format = "assert failed: line %d";
+	sprintf(s, format, line);	
+	return s;
 }
 
 void defineFunction(long type, char* name) {
