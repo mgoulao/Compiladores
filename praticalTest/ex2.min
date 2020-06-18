@@ -1,0 +1,10 @@
+program
+	function forward string argv number n done;
+	function forward number atoi string s done;
+	number n;
+	number m
+start
+	n := atoi(argv(1));
+	m := atoi(argv(2));
+	n xor m!
+end

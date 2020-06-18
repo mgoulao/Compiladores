@@ -1,0 +1,4 @@
+module
+	function number exemplo number a do
+		return a / 9
+end

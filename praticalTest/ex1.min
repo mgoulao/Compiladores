@@ -1,0 +1,9 @@
+program
+	function forward string argv number n done;
+	function forward number exemplo number a done;
+	function forward number atoi string s done;
+	number n
+start
+	n := atoi(argv(1));
+	exemplo(n);
+end
